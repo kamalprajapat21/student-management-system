@@ -1,61 +1,48 @@
-from fastapi import APIRouter, HTTPException, Depends
-from app.utils.auth_deps import get_current_user, require_teacher_or_admin, require_admin
-from app.utils.helpers import serialize_doc, serialize_list
-from app.models.timetable import TimetableCreate
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from typing import Optional
+
 from app.database import get_db
-from bson import ObjectId
-from datetime import datetime
+from app.models.timetable import Timetable
+from app.models.user import User
+from app.schemas.timetable import TimetableCreate
+from app.utils.auth_deps import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/timetable", tags=["Timetable"])
 
 
-@router.post("/")
-async def create_timetable(data: TimetableCreate, current_user=Depends(require_admin)):
-    db = get_db()
-    await db.timetables.delete_many({
-        "class_id": data.class_id,
-        "academic_year": data.academic_year,
-        "semester": data.semester
-    })
-    doc = {
-        **data.model_dump(),
-        "created_by": str(current_user["_id"]),
-        "created_at": datetime.utcnow()
-    }
-    result = await db.timetables.insert_one(doc)
-    doc["_id"] = result.inserted_id
-    return {"message": "Timetable created", "timetable": serialize_doc(doc)}
+@router.get("")
+def get_timetable(
+    class_name: Optional[str] = None, section: Optional[str] = None,
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    q = db.query(Timetable)
+    if class_name:
+        q = q.filter(Timetable.class_name == class_name)
+    if section:
+        q = q.filter(Timetable.section == section)
+    entries = q.order_by(Timetable.day_of_week, Timetable.start_time).all()
+    return {"timetable": [
+        {"id": t.id, "class_name": t.class_name, "section": t.section,
+         "subject_id": t.subject_id, "teacher_id": t.teacher_id,
+         "day_of_week": t.day_of_week, "start_time": str(t.start_time),
+         "end_time": str(t.end_time), "room": t.room} for t in entries]}
 
 
-@router.get("/class/{class_id}")
-async def get_class_timetable(class_id: str, current_user=Depends(get_current_user)):
-    db = get_db()
-    timetable = await db.timetables.find_one(
-        {"class_id": class_id},
-        sort=[("created_at", -1)]
-    )
-    if not timetable:
-        raise HTTPException(status_code=404, detail="Timetable not found")
-    return serialize_doc(timetable)
+@router.post("", status_code=201)
+def create_timetable(data: TimetableCreate, _=Depends(require_admin), db: Session = Depends(get_db)):
+    entry = Timetable(**data.model_dump())
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    return {"message": "Timetable entry added", "id": entry.id}
 
 
-@router.get("/my")
-async def get_my_timetable(current_user=Depends(get_current_user)):
-    db = get_db()
-    if current_user["role"] == "student":
-        class_id = current_user.get("class_name")
-        timetable = await db.timetables.find_one({"class_id": class_id}, sort=[("created_at", -1)])
-        return serialize_doc(timetable) if timetable else {}
-    elif current_user["role"] == "teacher":
-        teacher_id = str(current_user["_id"])
-        timetables = await db.timetables.find({
-            "slots.teacher_id": teacher_id
-        }).to_list(10)
-        teacher_slots = []
-        for t in timetables:
-            for slot in t.get("slots", []):
-                if slot.get("teacher_id") == teacher_id:
-                    slot["class_id"] = t["class_id"]
-                    teacher_slots.append(slot)
-        return {"slots": teacher_slots}
-    return {}
+@router.delete("/{entry_id}")
+def delete_timetable(entry_id: int, _=Depends(require_admin), db: Session = Depends(get_db)):
+    entry = db.query(Timetable).filter(Timetable.id == entry_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    db.delete(entry)
+    db.commit()
+    return {"message": "Timetable entry deleted"}

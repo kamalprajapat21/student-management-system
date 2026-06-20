@@ -1,192 +1,88 @@
-import React, { useEffect, useState } from 'react';
-import Layout from '../../components/common/Layout';
-import LoadingSpinner from '../../components/common/LoadingSpinner';
-import { aiService } from '../../services';
-import { useAuth } from '../../context/AuthContext';
-import { CpuChipIcon, ExclamationTriangleIcon, CheckCircleIcon, BookOpenIcon } from '@heroicons/react/24/outline';
+import React, { useEffect, useState } from 'react'
+import { useAuth } from '../../context/AuthContext'
+import { aiAPI } from '../../services/api'
+import { Brain, TrendingUp, AlertCircle, CheckCircle, Lightbulb } from 'lucide-react'
 
-const AIInsights = () => {
-  const { user } = useAuth();
-  const [insights, setInsights] = useState(null);
-  const [loading, setLoading] = useState(true);
+export default function AIInsights() {
+  const { user } = useAuth()
+  const [perf, setPerf] = useState(null)
+  const [recs, setRecs] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (user?.id) {
-      aiService.getAIDashboard(user.id)
-        .then(({ data }) => setInsights(data))
-        .finally(() => setLoading(false));
-    }
-  }, [user?.id]);
+    Promise.all([aiAPI.performance(user.id), aiAPI.recommendations(user.id)])
+      .then(([p, r]) => { setPerf(p.data); setRecs(r.data) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [user.id])
 
-  const riskColors = { low: 'text-green-600', medium: 'text-yellow-600', high: 'text-red-600' };
-  const riskBg = { low: 'bg-green-50 dark:bg-green-900/20', medium: 'bg-yellow-50 dark:bg-yellow-900/20', high: 'bg-red-50 dark:bg-red-900/20' };
-  const statusColors = { safe: 'text-green-600', warning: 'text-yellow-600', critical: 'text-red-600' };
+  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-600 border-t-transparent" /></div>
+
+  const levelColors = { low: 'green', medium: 'yellow', high: 'red' }
+  const predColors = { Excellent: 'text-green-600', Good: 'text-blue-600', Average: 'text-yellow-600', Weak: 'text-red-600' }
 
   return (
-    <Layout title="AI Insights">
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-purple-600 to-violet-600 rounded-2xl p-6 text-white">
-          <div className="flex items-center gap-3">
-            <CpuChipIcon className="w-10 h-10 text-white/80" />
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">AI Performance Insights</h1>
+      {perf && (
+        <div className="card">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 bg-primary-100 dark:bg-primary-900 rounded-xl flex items-center justify-center">
+              <Brain className="h-6 w-6 text-primary-600" />
+            </div>
             <div>
-              <h2 className="text-2xl font-bold">AI-Powered Insights</h2>
-              <p className="text-purple-100 mt-1">Personalized analysis and recommendations for your academic journey</p>
+              <h2 className="text-lg font-bold">Performance Prediction</h2>
+              <p className={`text-2xl font-bold ${predColors[perf.prediction]}`}>{perf.prediction}</p>
             </div>
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[
+              { label: 'Attendance', value: `${perf.attendance_percentage}%`, color: perf.attendance_percentage >= 75 ? 'green' : 'red' },
+              { label: 'Average Marks', value: `${perf.average_marks}%`, color: perf.average_marks >= 60 ? 'green' : 'red' },
+              { label: 'Assignments', value: `${perf.assignment_completion}%`, color: perf.assignment_completion >= 75 ? 'green' : 'yellow' },
+            ].map(({ label, value, color }) => (
+              <div key={label} className={`p-4 rounded-xl bg-${color}-50 dark:bg-${color}-900/20 border border-${color}-200 dark:border-${color}-800`}>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{label}</p>
+                <p className={`text-2xl font-bold text-${color}-600 dark:text-${color}-400`}>{value}</p>
+                <div className="mt-2 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div className={`h-full bg-${color}-500 rounded-full`} style={{ width: value }} />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-
-        {loading ? <LoadingSpinner className="py-12" /> : !insights ? (
-          <div className="card text-center py-12 text-gray-400">Failed to load AI insights</div>
-        ) : (
-          <>
-            {/* Performance Prediction */}
-            <div className="card">
-              <h3 className="section-title flex items-center gap-2">
-                <CpuChipIcon className="w-5 h-5 text-purple-500" />
-                Performance Prediction
+      )}
+      {recs && (
+        <>
+          {recs.warnings?.length > 0 && (
+            <div className="card border-l-4 border-l-red-400">
+              <h3 className="font-semibold text-red-700 dark:text-red-400 flex items-center gap-2 mb-3">
+                <AlertCircle className="h-5 w-5" /> Warnings
               </h3>
-              <div className={`p-4 rounded-xl ${riskBg[insights.performance_prediction?.risk_level || 'low']}`}>
-                <div className="flex items-center gap-3">
-                  {insights.performance_prediction?.risk_level === 'low' ? (
-                    <CheckCircleIcon className="w-8 h-8 text-green-500" />
-                  ) : (
-                    <ExclamationTriangleIcon className="w-8 h-8 text-yellow-500" />
-                  )}
-                  <div>
-                    <p className="font-semibold text-gray-800 dark:text-gray-200">
-                      Risk Level: <span className={riskColors[insights.performance_prediction?.risk_level || 'low'] + ' text-xl font-bold capitalize'}>
-                        {insights.performance_prediction?.risk_level || 'Unknown'}
-                      </span>
-                    </p>
-                    <p className="text-sm text-gray-500">Risk Score: {insights.performance_prediction?.risk_score || 0}/100</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Metrics */}
-              <div className="grid grid-cols-3 gap-4 mt-4">
-                {[
-                  { label: 'Attendance', value: `${insights.performance_prediction?.metrics?.attendance_percentage || 0}%` },
-                  { label: 'Avg Marks', value: `${insights.performance_prediction?.metrics?.average_marks || 0}%` },
-                  { label: 'Assignments', value: `${insights.performance_prediction?.metrics?.assignment_completion || 0}%` },
-                ].map(({ label, value }) => (
-                  <div key={label} className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">{value}</p>
-                    <p className="text-xs text-gray-500">{label}</p>
-                  </div>
+              <ul className="space-y-2">
+                {recs.warnings.map((w, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400">
+                    <span className="mt-0.5">•</span>{w}
+                  </li>
                 ))}
-              </div>
-
-              {/* Weak Subjects */}
-              {insights.performance_prediction?.weak_subjects?.length > 0 && (
-                <div className="mt-4">
-                  <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Weak Subjects:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {insights.performance_prediction.weak_subjects.map((s) => (
-                      <span key={s.subject} className="badge badge-red">
-                        {s.subject} ({s.average}%)
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Recommendations */}
-              {insights.performance_prediction?.recommendations?.length > 0 && (
-                <div className="mt-4">
-                  <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Recommendations:</p>
-                  <ul className="space-y-1">
-                    {insights.performance_prediction.recommendations.map((r, i) => (
-                      <li key={i} className="text-sm text-gray-600 dark:text-gray-400 flex items-start gap-2">
-                        <span className="text-purple-500 mt-0.5">→</span>{r}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              </ul>
             </div>
-
-            {/* Attendance Prediction */}
-            <div className="card">
-              <h3 className="section-title">Attendance Trend Prediction</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {[
-                  { label: 'Current %', value: `${insights.attendance_prediction?.current_percentage || 0}%` },
-                  { label: 'Predicted Final', value: `${insights.attendance_prediction?.predicted_final_percentage || 0}%` },
-                  { label: 'Classes Attended', value: insights.attendance_prediction?.total_classes_attended || 0 },
-                  { label: 'Classes Needed', value: insights.attendance_prediction?.classes_needed_for_75_percent || 0 },
-                ].map(({ label, value }) => (
-                  <div key={label} className="card bg-gray-50 dark:bg-gray-700 shadow-none text-center">
-                    <p className="text-xl font-bold text-gray-900 dark:text-white">{value}</p>
-                    <p className="text-xs text-gray-500">{label}</p>
-                  </div>
-                ))}
-              </div>
-              <div className={`mt-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-700`}>
-                <p className={`font-semibold ${statusColors[insights.attendance_prediction?.status || 'safe']}`}>
-                  Status: {insights.attendance_prediction?.status?.toUpperCase() || 'Unknown'}
-                </p>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                  {insights.attendance_prediction?.message}
-                </p>
-              </div>
-            </div>
-
-            {/* Study Recommendations */}
-            {insights.recommendations?.recommendations?.length > 0 && (
-              <div className="card">
-                <h3 className="section-title flex items-center gap-2">
-                  <BookOpenIcon className="w-5 h-5 text-blue-500" />
-                  Study Recommendations
-                </h3>
-                <p className="text-sm text-gray-500 mb-4">{insights.recommendations?.overall_suggestion}</p>
-                <div className="space-y-4">
-                  {insights.recommendations.recommendations.map((rec, i) => (
-                    <div key={i} className={`p-4 rounded-xl border-l-4 ${
-                      rec.priority === 'urgent' ? 'border-l-red-500 bg-red-50 dark:bg-red-900/10' :
-                      rec.priority === 'high' ? 'border-l-yellow-500 bg-yellow-50 dark:bg-yellow-900/10' :
-                      'border-l-blue-500 bg-blue-50 dark:bg-blue-900/10'
-                    }`}>
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-semibold text-gray-900 dark:text-white">{rec.subject}</h4>
-                        <span className={`badge ${rec.priority === 'urgent' ? 'badge-red' : rec.priority === 'high' ? 'badge-yellow' : 'badge-blue'}`}>
-                          {rec.priority}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-500 mt-1">Current Score: {rec.current_score}%</p>
-                      <div className="mt-3">
-                        <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">SUGGESTIONS:</p>
-                        <ul className="space-y-1">
-                          {rec.suggestions?.map((s, j) => (
-                            <li key={j} className="text-sm text-gray-600 dark:text-gray-400 flex items-start gap-2">
-                              <span className="text-blue-500 mt-0.5">•</span>{s}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                      {rec.resources?.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">RESOURCES:</p>
-                          <div className="flex flex-wrap gap-2">
-                            {rec.resources.map((r, j) => (
-                              <span key={j} className="text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 px-2 py-1 rounded-lg text-gray-600 dark:text-gray-400">
-                                📚 {r}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+          )}
+          <div className="card">
+            <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+              <Lightbulb className="h-5 w-5 text-yellow-500" /> AI Recommendations
+            </h3>
+            <div className="space-y-3">
+              {recs.recommendations?.map((rec, i) => (
+                <div key={i} className="flex items-start gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <CheckCircle className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-blue-700 dark:text-blue-300">{rec}</p>
                 </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </Layout>
-  );
-};
-
-export default AIInsights;
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}

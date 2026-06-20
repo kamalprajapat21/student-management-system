@@ -1,46 +1,28 @@
-from pydantic import BaseModel
-from typing import Optional
-from enum import Enum
+from sqlalchemy import Column, Integer, Text, Date, DateTime, ForeignKey, Enum as SAEnum
+from sqlalchemy.orm import relationship
+from datetime import datetime
+import enum
+from app.database import Base
 
 
-class LeaveStatus(str, Enum):
+class LeaveStatus(str, enum.Enum):
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
 
 
-class LeaveType(str, Enum):
-    sick = "sick"
-    personal = "personal"
-    family = "family"
-    other = "other"
+class Leave(Base):
+    __tablename__ = "leaves"
 
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    reason = Column(Text, nullable=False)
+    from_date = Column(Date, nullable=False)
+    to_date = Column(Date, nullable=False)
+    status = Column(SAEnum(LeaveStatus), default=LeaveStatus.pending)
+    applied_at = Column(DateTime, default=datetime.utcnow)
+    reviewed_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    review_remarks = Column(Text, nullable=True)
 
-class LeaveCreate(BaseModel):
-    leave_type: LeaveType
-    start_date: str
-    end_date: str
-    reason: str
-    contact_during_leave: Optional[str] = None
-    attachment: Optional[str] = None
-
-
-class LeaveAction(BaseModel):
-    leave_id: str
-    action: LeaveStatus  # approved or rejected
-    remarks: Optional[str] = None
-
-
-class LeaveResponse(BaseModel):
-    id: str
-    student_id: str
-    student_name: str
-    leave_type: str
-    start_date: str
-    end_date: str
-    reason: str
-    status: LeaveStatus
-    reviewed_by: Optional[str] = None
-    reviewed_at: Optional[str] = None
-    remarks: Optional[str] = None
-    created_at: str
+    student = relationship("User", foreign_keys=[student_id], backref="leaves")
+    reviewed_by = relationship("User", foreign_keys=[reviewed_by_id], backref="reviewed_leaves")

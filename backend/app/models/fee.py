@@ -1,43 +1,29 @@
-from pydantic import BaseModel
-from typing import Optional, List
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Enum as SAEnum, Text
+from sqlalchemy.orm import relationship
 from datetime import datetime
-from enum import Enum
+import enum
+from app.database import Base
 
 
-class FeeStatus(str, Enum):
+class FeeStatus(str, enum.Enum):
     paid = "paid"
-    pending = "pending"
-    overdue = "overdue"
+    unpaid = "unpaid"
     partial = "partial"
+    overdue = "overdue"
 
 
-class FeeCreate(BaseModel):
-    student_id: str
-    fee_type: str  # tuition, hostel, transport, exam, etc.
-    amount: float
-    due_date: str
-    semester: int
-    academic_year: str
-    description: Optional[str] = None
+class Fee(Base):
+    __tablename__ = "fees"
 
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    amount = Column(Float, nullable=False)
+    fee_type = Column(String(100), default="tuition")
+    description = Column(Text, nullable=True)
+    due_date = Column(DateTime, nullable=False)
+    payment_date = Column(DateTime, nullable=True)
+    status = Column(SAEnum(FeeStatus), default=FeeStatus.unpaid)
+    transaction_id = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-class FeePayment(BaseModel):
-    fee_id: str
-    amount_paid: float
-    payment_method: str  # cash, online, cheque
-    transaction_id: Optional[str] = None
-    remarks: Optional[str] = None
-
-
-class FeeResponse(BaseModel):
-    id: str
-    student_id: str
-    fee_type: str
-    amount: float
-    amount_paid: float
-    due_amount: float
-    due_date: str
-    status: FeeStatus
-    payment_history: List[dict]
-    semester: int
-    academic_year: str
+    student = relationship("User", foreign_keys=[student_id], backref="fees")

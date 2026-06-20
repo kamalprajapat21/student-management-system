@@ -1,174 +1,110 @@
-import React, { useEffect, useState } from 'react';
-import Layout from '../../components/common/Layout';
-import Modal from '../../components/common/Modal';
-import LoadingSpinner from '../../components/common/LoadingSpinner';
-import { studentService, analyticsService } from '../../services';
-import { MagnifyingGlassIcon, ArrowDownTrayIcon, UserPlusIcon } from '@heroicons/react/24/outline';
-import toast from 'react-hot-toast';
+import React, { useEffect, useState } from 'react'
+import { studentAPI, authAPI } from '../../services/api'
+import toast from 'react-hot-toast'
+import Modal from '../../components/common/Modal'
+import { Plus, Trash2, Search } from 'lucide-react'
 
-const StudentManagement = () => {
-  const [students, setStudents] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [dept, setDept] = useState('');
-  const limit = 20;
+export default function StudentManagement() {
+  const [students, setStudents] = useState([])
+  const [search, setSearch] = useState('')
+  const [modal, setModal] = useState(false)
+  const [form, setForm] = useState({ email: '', full_name: '', password: 'Student@123', phone: '', roll_number: '', department: 'Computer Science', class_name: 'CS-3A', section: 'A', semester: '3', year: '2' })
+  const [loading, setLoading] = useState(false)
+  const [page, setPage] = useState({ total: 0, skip: 0 })
 
-  const fetchStudents = async () => {
-    setLoading(true);
+  const load = (search = '', skip = 0) => {
+    studentAPI.list({ search, skip, limit: 20 }).then(r => {
+      setStudents(r.data.students || [])
+      setPage({ total: r.data.total || 0, skip })
+    }).catch(() => {})
+  }
+  useEffect(() => load(), [])
+
+  const create = async () => {
+    if (!form.email || !form.roll_number || !form.full_name) return toast.error('Fill required fields')
+    setLoading(true)
     try {
-      const { data } = await studentService.getAll({ page, limit, search, department: dept });
-      setStudents(data.students);
-      setTotal(data.total);
-    } finally {
-      setLoading(false);
-    }
-  };
+      await authAPI.registerStudent({ ...form, semester: Number(form.semester), year: Number(form.year) })
+      toast.success('Student added!')
+      setModal(false)
+      load()
+    } catch (err) { toast.error(err.response?.data?.detail || 'Failed') }
+    finally { setLoading(false) }
+  }
 
-  useEffect(() => { fetchStudents(); }, [page, dept]);
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-    setPage(1);
-    fetchStudents();
-  };
-
-  const exportExcel = async () => {
-    try {
-      const { data } = await analyticsService.exportStudents();
-      const url = URL.createObjectURL(new Blob([data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'students.xlsx';
-      link.click();
-      URL.revokeObjectURL(url);
-      toast.success('Exported successfully!');
-    } catch { toast.error('Export failed'); }
-  };
-
-  const totalPages = Math.ceil(total / limit);
+  const del = async (id) => {
+    if (!confirm('Deactivate this student?')) return
+    await studentAPI.delete(id)
+    toast.success('Student deactivated')
+    load(search)
+  }
 
   return (
-    <Layout title="Student Management">
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="page-title">Students</h2>
-            <p className="text-gray-500 text-sm mt-1">{total} total students</p>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={exportExcel} className="btn-secondary flex items-center gap-2 text-sm">
-              <ArrowDownTrayIcon className="w-4 h-4" />
-              Export Excel
-            </button>
-          </div>
-        </div>
-
-        {/* Search & Filter */}
-        <div className="card">
-          <form onSubmit={handleSearch} className="flex flex-wrap gap-3">
-            <div className="flex-1 min-w-48 relative">
-              <MagnifyingGlassIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                className="input pl-9"
-                placeholder="Search by name, roll number, email..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <input
-              type="text"
-              className="input w-40"
-              placeholder="Department"
-              value={dept}
-              onChange={(e) => setDept(e.target.value)}
-            />
-            <button type="submit" className="btn-primary px-5">Search</button>
-          </form>
-        </div>
-
-        {/* Table */}
-        <div className="card overflow-x-auto">
-          {loading ? <LoadingSpinner className="py-8" /> : (
-            <>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 dark:border-gray-700">
-                    {['#', 'Name', 'Roll No', 'Email', 'Department', 'Class', 'Semester', 'Status'].map(h => (
-                      <th key={h} className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {students.map((student, i) => (
-                    <tr key={student.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                      <td className="py-3 px-4 text-gray-500">{(page - 1) * limit + i + 1}</td>
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-primary-100 dark:bg-primary-900 rounded-full flex items-center justify-center overflow-hidden">
-                            {student.profile_photo ? (
-                              <img src={student.profile_photo} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <span className="text-primary-600 dark:text-primary-400 font-semibold text-xs">
-                                {student.full_name?.[0]?.toUpperCase()}
-                              </span>
-                            )}
-                          </div>
-                          <span className="font-medium text-gray-900 dark:text-white">{student.full_name}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-gray-600">{student.roll_number}</td>
-                      <td className="py-3 px-4 text-gray-500">{student.email}</td>
-                      <td className="py-3 px-4 text-gray-600">{student.department}</td>
-                      <td className="py-3 px-4 text-gray-600">{student.class_name}</td>
-                      <td className="py-3 px-4 text-gray-600">{student.semester}</td>
-                      <td className="py-3 px-4">
-                        <span className={`badge ${student.is_active ? 'badge-green' : 'badge-red'}`}>
-                          {student.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                  {students.length === 0 && (
-                    <tr><td colSpan={8} className="py-12 text-center text-gray-400">No students found</td></tr>
-                  )}
-                </tbody>
-              </table>
-
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="mt-4 flex items-center justify-between">
-                  <p className="text-sm text-gray-500">
-                    Showing {(page - 1) * limit + 1} to {Math.min(page * limit, total)} of {total}
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                      disabled={page === 1}
-                      className="btn-secondary text-sm px-3 py-1.5 disabled:opacity-40"
-                    >
-                      Previous
-                    </button>
-                    <span className="px-3 py-1.5 text-sm font-medium">{page} / {totalPages}</span>
-                    <button
-                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                      disabled={page === totalPages}
-                      className="btn-secondary text-sm px-3 py-1.5 disabled:opacity-40"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Student Management</h1>
+        <button onClick={() => setModal(true)} className="btn-primary flex items-center gap-2"><Plus className="h-4 w-4" /> Add Student</button>
       </div>
-    </Layout>
-  );
-};
-
-export default StudentManagement;
+      <div className="card">
+        <div className="flex gap-3 mb-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input className="input pl-9" placeholder="Search students..." value={search}
+              onChange={e => { setSearch(e.target.value); load(e.target.value) }} />
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-gray-200 dark:border-gray-700">
+              {['Name', 'Email', 'Roll No', 'Class', 'Department', 'Actions'].map(h => <th key={h} className="text-left py-2 pr-4 text-gray-500">{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {students.map(s => (
+                <tr key={s.id} className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                  <td className="py-3 pr-4 font-medium">{s.full_name}</td>
+                  <td className="py-3 pr-4 text-gray-500">{s.email}</td>
+                  <td className="py-3 pr-4">{s.roll_number}</td>
+                  <td className="py-3 pr-4">{s.class_name}</td>
+                  <td className="py-3 pr-4">{s.department}</td>
+                  <td className="py-3">
+                    <button onClick={() => del(s.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-600">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {!students.length && <tr><td colSpan={6} className="py-8 text-center text-gray-500">No students found.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-sm text-gray-500 mt-2">Total: {page.total} students</p>
+      </div>
+      <Modal open={modal} onClose={() => setModal(false)} title="Add New Student" size="lg">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[
+            ['full_name', 'Full Name *', 'text'],
+            ['email', 'Email *', 'email'],
+            ['password', 'Password', 'password'],
+            ['phone', 'Phone', 'tel'],
+            ['roll_number', 'Roll Number *', 'text'],
+            ['department', 'Department', 'text'],
+            ['class_name', 'Class', 'text'],
+            ['section', 'Section', 'text'],
+            ['semester', 'Semester', 'number'],
+            ['year', 'Year', 'number'],
+          ].map(([name, label, type]) => (
+            <div key={name}>
+              <label className="label">{label}</label>
+              <input type={type} className="input" value={form[name]}
+                onChange={e => setForm(p => ({...p, [name]: e.target.value}))} />
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-3 mt-4">
+          <button onClick={() => setModal(false)} className="btn-secondary flex-1">Cancel</button>
+          <button onClick={create} disabled={loading} className="btn-primary flex-1">{loading ? 'Adding...' : 'Add Student'}</button>
+        </div>
+      </Modal>
+    </div>
+  )
+}

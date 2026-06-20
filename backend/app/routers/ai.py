@@ -1,48 +1,42 @@
-from fastapi import APIRouter, HTTPException, Depends
-from app.utils.auth_deps import get_current_user
-from app.utils.helpers import serialize_doc
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+
 from app.database import get_db
-from app.services.ai_service import (
-    predict_performance,
-    predict_attendance,
-    get_study_recommendations
-)
+from app.models.user import User
+from app.services.ai_service import predict_performance, get_ai_recommendations, chat_with_ai
+from app.utils.auth_deps import get_current_user
 
-router = APIRouter(prefix="/api/ai", tags=["AI Features"])
+router = APIRouter(prefix="/api/ai", tags=["AI"])
 
 
-@router.get("/predict/performance/{student_id}")
-async def predict_student_performance(student_id: str, current_user=Depends(get_current_user)):
-    db = get_db()
-    student = await db.users.find_one_or_none(student_id)
-    result = await predict_performance(student_id, db)
-    return result
+class ChatMessage(BaseModel):
+    message: str
 
 
-@router.get("/predict/attendance/{student_id}")
-async def predict_student_attendance(student_id: str, current_user=Depends(get_current_user)):
-    db = get_db()
-    result = await predict_attendance(student_id, db)
-    return result
+@router.get("/performance/{student_id}")
+def performance_prediction(
+    student_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.role.value == "student" and current_user.id != student_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return predict_performance(student_id, db)
 
 
 @router.get("/recommendations/{student_id}")
-async def get_recommendations(student_id: str, current_user=Depends(get_current_user)):
-    db = get_db()
-    result = await get_study_recommendations(student_id, db)
-    return result
+def ai_recommendations(
+    student_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.role.value == "student" and current_user.id != student_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return get_ai_recommendations(student_id, db)
 
 
-@router.get("/dashboard/{student_id}")
-async def get_ai_dashboard(student_id: str, current_user=Depends(get_current_user)):
-    """Combined AI insights for student dashboard."""
-    db = get_db()
-    performance = await predict_performance(student_id, db)
-    attendance_pred = await predict_attendance(student_id, db)
-    recommendations = await get_study_recommendations(student_id, db)
-
-    return {
-        "performance_prediction": performance,
-        "attendance_prediction": attendance_pred,
-        "recommendations": recommendations
-    }
+@router.post("/chat")
+def ai_chat(msg: ChatMessage, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    response = chat_with_ai(msg.message, current_user, db)
+    return {"response": response}

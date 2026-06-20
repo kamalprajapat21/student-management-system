@@ -1,252 +1,200 @@
-import numpy as np
+from sqlalchemy.orm import Session
+from app.models.attendance import Attendance
+from app.models.exam import Mark
+from app.models.assignment import Assignment, Submission
+from app.models.user import User
+from app.config import settings
 from typing import Optional
-from bson import ObjectId
 
 
-async def predict_performance(student_id: str, db) -> dict:
-    """Predict student performance risk using attendance, marks, and assignment data."""
-    try:
-        # Get attendance
-        records = await db.attendance.find({"student_id": student_id}).to_list(1000)
-        total = len(records)
-        present = sum(1 for r in records if r["status"] in ["present", "late"])
-        attendance_pct = (present / total * 100) if total > 0 else 0
+def _get_student_stats(student_id: int, db: Session) -> dict:
+    records = db.query(Attendance).filter(Attendance.student_id == student_id).all()
+    total = len(records)
+    present = sum(1 for r in records if r.status.value in ("present", "late"))
+    att_pct = round((present / total) * 100, 2) if total > 0 else 0
 
-        # Get marks
-        marks = await db.marks.find({"student_id": student_id}).to_list(100)
-        avg_marks = 0
-        if marks:
-            total_marks = [m.get("marks_obtained", 0) for m in marks if m.get("marks_obtained") is not None]
-            avg_marks = np.mean(total_marks) if total_marks else 0
+    marks = db.query(Mark).filter(Mark.student_id == student_id).all()
+    avg_marks = round(sum(m.marks_obtained for m in marks) / len(marks), 2) if marks else 0.0
 
-        # Get assignment completion
-        assignments = await db.assignments.find().to_list(100)
-        total_assignments = len(assignments)
-        submitted = 0
-        if total_assignments > 0:
-            for a in assignments:
-                sub = await db.submissions.find_one(
-                    {"assignment_id": str(a["_id"]), "student_id": student_id}
-                )
-                if sub:
-                    submitted += 1
-        assignment_pct = (submitted / total_assignments * 100) if total_assignments > 0 else 0
+    all_assignments = db.query(Assignment).filter(Assignment.is_active == True).count()
+    submitted = db.query(Submission).filter(Submission.student_id == student_id).count()
+    assign_pct = round((submitted / all_assignments) * 100, 2) if all_assignments > 0 else 0
 
-        # Risk scoring
-        risk_score = 0
-        weak_subjects = []
-
-        if attendance_pct < 60:
-            risk_score += 40
-        elif attendance_pct < 75:
-            risk_score += 20
-        elif attendance_pct < 85:
-            risk_score += 10
-
-        if avg_marks < 40:
-            risk_score += 40
-        elif avg_marks < 60:
-            risk_score += 20
-        elif avg_marks < 75:
-            risk_score += 10
-
-        if assignment_pct < 50:
-            risk_score += 20
-        elif assignment_pct < 75:
-            risk_score += 10
-
-        # Find weak subjects
-        subject_marks = {}
-        for m in marks:
-            exam = await db.exams.find_one({"_id": ObjectId(m["exam_id"])})
-            if exam:
-                subj = exam["subject"]
-                if subj not in subject_marks:
-                    subject_marks[subj] = []
-                pct = (m.get("marks_obtained", 0) / exam.get("total_marks", 100)) * 100
-                subject_marks[subj].append(pct)
-
-        for subj, pcts in subject_marks.items():
-            avg = np.mean(pcts)
-            if avg < 60:
-                weak_subjects.append({"subject": subj, "average": round(avg, 2), "status": "weak"})
-
-        risk_level = "low"
-        if risk_score >= 60:
-            risk_level = "high"
-        elif risk_score >= 30:
-            risk_level = "medium"
-
-        return {
-            "student_id": student_id,
-            "risk_level": risk_level,
-            "risk_score": risk_score,
-            "metrics": {
-                "attendance_percentage": round(attendance_pct, 2),
-                "average_marks": round(float(avg_marks), 2),
-                "assignment_completion": round(assignment_pct, 2)
-            },
-            "weak_subjects": weak_subjects,
-            "recommendations": _get_performance_recommendations(risk_level, attendance_pct, avg_marks, assignment_pct)
-        }
-    except Exception as e:
-        return {"error": str(e), "student_id": student_id}
+    return {"attendance_pct": att_pct, "avg_marks": avg_marks,
+            "assignment_pct": assign_pct, "total_classes": total, "present": present}
 
 
-async def predict_attendance(student_id: str, db) -> dict:
-    """Predict final attendance percentage based on current trend."""
-    try:
-        records = await db.attendance.find({"student_id": student_id}).sort("date", 1).to_list(1000)
-        if not records:
-            return {"prediction": "No data available", "student_id": student_id}
+def predict_performance(student_id: int, db: Session) -> dict:
+    stats = _get_student_stats(student_id, db)
+    att_pct, avg_marks, assign_pct = stats["attendance_pct"], stats["avg_marks"], stats["assignment_pct"]
 
-        total = len(records)
-        present = sum(1 for r in records if r["status"] in ["present", "late"])
-        current_pct = (present / total * 100) if total > 0 else 0
+    risk_score = 0
+    if att_pct < 60:
+        risk_score += 40
+    elif att_pct < 75:
+        risk_score += 20
+    elif att_pct < 85:
+        risk_score += 10
 
-        # Simple linear trend prediction
-        # Assume semester has ~180 classes total
-        total_expected = 180
-        remaining = max(0, total_expected - total)
-        # Predict if trend continues
-        predicted_present = present + (remaining * (present / total if total > 0 else 0.75))
-        predicted_pct = (predicted_present / total_expected * 100) if total_expected > 0 else 0
+    if avg_marks < 40:
+        risk_score += 40
+    elif avg_marks < 60:
+        risk_score += 20
+    elif avg_marks < 75:
+        risk_score += 10
 
-        # Classes needed to reach 75%
-        if current_pct < 75 and remaining > 0:
-            required_for_75 = max(0, (0.75 * total_expected - present))
-            classes_needed = int(required_for_75)
-        else:
-            classes_needed = 0
+    if assign_pct < 50:
+        risk_score += 20
+    elif assign_pct < 75:
+        risk_score += 10
 
-        status = "safe" if predicted_pct >= 75 else "warning" if predicted_pct >= 60 else "critical"
-
-        return {
-            "student_id": student_id,
-            "current_percentage": round(current_pct, 2),
-            "predicted_final_percentage": round(predicted_pct, 2),
-            "status": status,
-            "total_classes_attended": present,
-            "total_classes_held": total,
-            "remaining_classes": remaining,
-            "classes_needed_for_75_percent": classes_needed,
-            "message": _get_attendance_message(status, current_pct, predicted_pct)
-        }
-    except Exception as e:
-        return {"error": str(e), "student_id": student_id}
-
-
-async def get_study_recommendations(student_id: str, db) -> dict:
-    """Generate study recommendations based on performance data."""
-    try:
-        marks = await db.marks.find({"student_id": student_id}).to_list(100)
-
-        recommendations = []
-        subject_performance = {}
-
-        for m in marks:
-            exam = await db.exams.find_one({"_id": ObjectId(m["exam_id"])})
-            if exam:
-                subj = exam["subject"]
-                pct = (m.get("marks_obtained", 0) / exam.get("total_marks", 100)) * 100
-                if subj not in subject_performance:
-                    subject_performance[subj] = []
-                subject_performance[subj].append(pct)
-
-        for subj, perfs in subject_performance.items():
-            avg = np.mean(perfs)
-            if avg < 40:
-                recommendations.append({
-                    "subject": subj,
-                    "priority": "urgent",
-                    "current_score": round(float(avg), 2),
-                    "suggestions": [
-                        f"Focus heavily on {subj} fundamentals",
-                        "Consider extra tutoring or study groups",
-                        "Review all previous exam papers",
-                        "Practice daily problems for 2+ hours",
-                        "Consult teacher during office hours"
-                    ],
-                    "resources": [
-                        f"NPTEL lectures on {subj}",
-                        f"Khan Academy - {subj} basics",
-                        "Previous year question papers"
-                    ]
-                })
-            elif avg < 60:
-                recommendations.append({
-                    "subject": subj,
-                    "priority": "high",
-                    "current_score": round(float(avg), 2),
-                    "suggestions": [
-                        f"Revise weak topics in {subj}",
-                        "Solve practice problems daily",
-                        "Create summary notes for revision",
-                        "Join peer study sessions"
-                    ],
-                    "resources": [
-                        f"YouTube tutorials on weak {subj} topics",
-                        "Textbook exercises",
-                        "Online mock tests"
-                    ]
-                })
-            elif avg < 75:
-                recommendations.append({
-                    "subject": subj,
-                    "priority": "medium",
-                    "current_score": round(float(avg), 2),
-                    "suggestions": [
-                        f"Good progress in {subj}! Focus on advanced topics",
-                        "Attempt more challenging problems",
-                        "Review recent exam mistakes"
-                    ],
-                    "resources": [
-                        "Advanced problem sets",
-                        "Reference books for deeper understanding"
-                    ]
-                })
-
-        return {
-            "student_id": student_id,
-            "recommendations": sorted(recommendations, key=lambda x: {"urgent": 0, "high": 1, "medium": 2}.get(x["priority"], 3)),
-            "overall_suggestion": _get_overall_suggestion(subject_performance)
-        }
-    except Exception as e:
-        return {"error": str(e), "student_id": student_id}
-
-
-def _get_performance_recommendations(risk: str, att: float, marks: float, assign: float) -> list:
-    recs = []
-    if att < 75:
-        recs.append("Improve attendance - currently below required 75%")
-    if marks < 60:
-        recs.append("Focus on improving exam scores through regular practice")
-    if assign < 75:
-        recs.append("Complete pending assignments on time")
-    if risk == "low":
-        recs.append("Great performance! Keep it up and aim for distinction")
-    return recs
-
-
-def _get_attendance_message(status: str, current: float, predicted: float) -> str:
-    if status == "safe":
-        return f"Your attendance trend looks good. Predicted final: {predicted:.1f}%"
-    elif status == "warning":
-        return f"Warning: If trend continues, final attendance may be {predicted:.1f}%. Attend more classes."
+    if risk_score >= 60:
+        level, prediction = "high", "Weak"
+    elif risk_score >= 30:
+        level, prediction = "medium", "Average"
+    elif risk_score >= 10:
+        level, prediction = "low", "Good"
     else:
-        return f"Critical: Attendance trend is very concerning. Predicted final: {predicted:.1f}%. Immediate action needed."
+        level, prediction = "low", "Excellent"
+
+    return {
+        "student_id": student_id, "prediction": prediction, "risk_level": level,
+        "risk_score": risk_score, "attendance_percentage": att_pct,
+        "average_marks": avg_marks, "assignment_completion": assign_pct,
+    }
 
 
-def _get_overall_suggestion(subject_performance: dict) -> str:
-    if not subject_performance:
-        return "No marks data available yet."
-    all_avgs = [np.mean(perfs) for perfs in subject_performance.values()]
-    overall = np.mean(all_avgs)
-    if overall >= 80:
-        return "Excellent overall performance! Consider applying for merit scholarships."
-    elif overall >= 65:
-        return "Good performance. Focus on weak subjects to improve overall GPA."
-    elif overall >= 50:
-        return "Average performance. Create a structured study plan and seek teacher guidance."
-    else:
-        return "Performance needs significant improvement. Seek academic counseling immediately."
+def get_ai_recommendations(student_id: int, db: Session) -> dict:
+    stats = _get_student_stats(student_id, db)
+    att_pct, avg_marks, assign_pct = stats["attendance_pct"], stats["avg_marks"], stats["assignment_pct"]
+
+    recommendations = []
+    warnings = []
+
+    if att_pct < 75:
+        warnings.append(f"Your attendance is {att_pct}% - below the 75% minimum requirement.")
+        recommendations.append("Attend classes regularly to avoid shortage.")
+        recommendations.append("Contact your teacher if you have valid reasons for absence.")
+
+    if avg_marks < 60:
+        warnings.append(f"Your average marks are {avg_marks}% - needs improvement.")
+        recommendations.append("Practice previous year papers.")
+        recommendations.append("Revise weak subjects daily.")
+        recommendations.append("Attend doubt-clearing sessions.")
+
+    if assign_pct < 75:
+        warnings.append(f"Only {assign_pct}% assignments submitted.")
+        recommendations.append("Complete and submit pending assignments on time.")
+
+    if not warnings:
+        recommendations.append("Keep up the excellent work!")
+        recommendations.append("Consider helping peers who may be struggling.")
+
+    gemini_suggestion = _get_gemini_insight(att_pct, avg_marks, assign_pct)
+    if gemini_suggestion:
+        recommendations.append(gemini_suggestion)
+
+    return {
+        "student_id": student_id, "warnings": warnings,
+        "recommendations": recommendations,
+        "attendance_percentage": att_pct, "average_marks": avg_marks,
+        "assignment_completion": assign_pct,
+    }
+
+
+def chat_with_ai(message: str, user: User, db: Session) -> str:
+    context = _build_student_context(user, db)
+    gemini_response = _query_gemini(message, context)
+    if gemini_response:
+        return gemini_response
+    return _rule_based_chat(message, user, db)
+
+
+def _build_student_context(user: User, db: Session) -> str:
+    if user.role.value != "student":
+        return f"User: {user.full_name}, Role: {user.role.value}"
+    stats = _get_student_stats(user.id, db)
+    return (
+        f"Student: {user.full_name}\n"
+        f"Attendance: {stats['attendance_pct']}%\n"
+        f"Average Marks: {stats['avg_marks']}%\n"
+        f"Assignment Completion: {stats['assignment_pct']}%\n"
+    )
+
+
+def _query_gemini(message: str, context: str) -> Optional[str]:
+    if not settings.gemini_api_key:
+        return None
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=settings.gemini_api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        prompt = (
+            f"You are an AI assistant for a Student Management System.\n"
+            f"Student context:\n{context}\n\n"
+            f"Student asks: {message}\n\n"
+            f"Provide a helpful, concise response (2-3 sentences max)."
+        )
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception:
+        return None
+
+
+def _get_gemini_insight(att_pct: float, avg_marks: float, assign_pct: float) -> Optional[str]:
+    if not settings.gemini_api_key:
+        return None
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=settings.gemini_api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        prompt = (
+            f"Student: attendance {att_pct}%, avg marks {avg_marks}%, "
+            f"assignment completion {assign_pct}%. "
+            f"Give ONE specific, actionable study tip in 1 sentence."
+        )
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception:
+        return None
+
+
+def _rule_based_chat(message: str, user: User, db: Session) -> str:
+    msg = message.lower()
+    if any(w in msg for w in ["attendance", "present", "absent"]):
+        if user.role.value == "student":
+            records = db.query(Attendance).filter(Attendance.student_id == user.id).all()
+            total = len(records)
+            present = sum(1 for r in records if r.status.value in ("present", "late"))
+            pct = round((present / total) * 100, 2) if total > 0 else 0
+            return f"Your attendance is {pct}% ({present}/{total} classes attended)."
+        return "Please log in as a student to see attendance."
+
+    if any(w in msg for w in ["marks", "score", "grade", "result"]):
+        if user.role.value == "student":
+            marks = db.query(Mark).filter(Mark.student_id == user.id).all()
+            if not marks:
+                return "No marks recorded yet."
+            avg = round(sum(m.marks_obtained for m in marks) / len(marks), 2)
+            return f"You have {len(marks)} exam result(s). Your average score is {avg}%."
+        return "Please log in as a student to see marks."
+
+    if any(w in msg for w in ["assignment", "homework"]):
+        if user.role.value == "student":
+            total = db.query(Assignment).filter(Assignment.is_active == True).count()
+            submitted = db.query(Submission).filter(Submission.student_id == user.id).count()
+            return f"There are {total} active assignments. You have submitted {submitted}."
+        return "Assignment info is available in the Assignments section."
+
+    if any(w in msg for w in ["fee", "payment", "dues"]):
+        if user.role.value == "student":
+            from app.models.fee import Fee
+            fees = db.query(Fee).filter(Fee.student_id == user.id).all()
+            pending = sum(f.amount for f in fees if f.status.value != "paid")
+            return f"You have pending fees of Rs {pending:.0f}."
+        return "Fee information is in the Fees section."
+
+    return (
+        "I can help with attendance, marks, assignments, fees, and study tips. "
+        "What would you like to know?"
+    )

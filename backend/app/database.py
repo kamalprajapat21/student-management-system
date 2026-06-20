@@ -1,42 +1,43 @@
-from motor.motor_asyncio import AsyncIOMotorClient
+from sqlalchemy import create_engine, text
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 from app.config import settings
 
-client: AsyncIOMotorClient = None
-db = None
+engine = create_engine(
+    settings.database_url,
+    pool_pre_ping=True,
+    pool_recycle=3600,
+    pool_size=10,
+    max_overflow=20,
+    echo=settings.debug,
+)
 
-
-async def connect_to_mongo():
-    global client, db
-    client = AsyncIOMotorClient(settings.mongodb_url)
-    db = client[settings.database_name]
-    # Create indexes
-    await create_indexes()
-    print(f"Connected to MongoDB: {settings.database_name}")
-
-
-async def close_mongo_connection():
-    global client
-    if client:
-        client.close()
-        print("MongoDB connection closed")
-
-
-async def create_indexes():
-    await db.users.create_index("email", unique=True)
-    await db.users.create_index("roll_number", sparse=True)
-    await db.users.create_index("employee_id", sparse=True)
-    await db.attendance.create_index([("student_id", 1), ("date", 1)])
-    await db.attendance.create_index("date")
-    await db.assignments.create_index("teacher_id")
-    await db.assignments.create_index("class_id")
-    await db.notifications.create_index("user_id")
-    await db.notifications.create_index("created_at")
-    await db.fees.create_index("student_id")
-    await db.leaves.create_index("student_id")
-    await db.notices.create_index("created_at")
-    await db.audit_logs.create_index("timestamp")
-    await db.audit_logs.create_index("user_id")
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
 
 
 def get_db():
-    return db
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def create_tables():
+    """Create all tables defined in models."""
+    import app.models  # noqa: F401 – ensure all models are imported
+    Base.metadata.create_all(bind=engine)
+    print("Database tables created.")
+
+
+def check_connection():
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        print(f"Connected to MySQL: {settings.db_name}")
+        return True
+    except Exception as exc:
+        print(f"Database connection failed: {exc}")
+        return False
+

@@ -1,42 +1,27 @@
-from pydantic import BaseModel
-from typing import Optional, List
-from enum import Enum
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Enum as SAEnum
+from sqlalchemy.orm import relationship
+from datetime import datetime
+import enum
+from app.database import Base
 
 
-class NoticePriority(str, Enum):
-    low = "low"
-    normal = "normal"
-    high = "high"
-    urgent = "urgent"
-
-
-class NoticeTarget(str, Enum):
+class TargetRole(str, enum.Enum):
     all = "all"
-    students = "students"
-    teachers = "teachers"
-    parents = "parents"
-    class_specific = "class_specific"
+    student = "student"
+    teacher = "teacher"
+    parent = "parent"
+    admin = "admin"
 
 
-class NoticeCreate(BaseModel):
-    title: str
-    content: str
-    priority: NoticePriority = NoticePriority.normal
-    target: NoticeTarget = NoticeTarget.all
-    target_class: Optional[str] = None
-    target_department: Optional[str] = None
-    attachments: Optional[List[str]] = []
-    expires_at: Optional[str] = None
+class Notice(Base):
+    __tablename__ = "notices"
 
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    target_role = Column(SAEnum(TargetRole), default=TargetRole.all)
+    is_active = Column(Integer, default=1)
 
-class NoticeResponse(BaseModel):
-    id: str
-    title: str
-    content: str
-    priority: str
-    target: str
-    created_by: str
-    created_by_name: str
-    created_at: str
-    attachments: List[str]
-    is_read: Optional[bool] = False
+    created_by = relationship("User", foreign_keys=[created_by_id], backref="notices")

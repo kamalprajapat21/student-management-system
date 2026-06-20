@@ -1,19 +1,23 @@
-import React from 'react';
-import Sidebar from './Sidebar';
-import Navbar from './Navbar';
+import React, { useState } from 'react'
+import Sidebar from './Sidebar'
+import Navbar from './Navbar'
+import Chatbot from './Chatbot'
 
-const Layout = ({ children, title }) => {
+export default function Layout({ children }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
-      <Sidebar />
-      <div className="lg:pl-64 flex flex-col min-h-screen">
-        <Navbar title={title} />
-        <main className="flex-1 p-4 sm:p-6 animate-fade-in">
-          {children}
+    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <Navbar onMenuClick={() => setSidebarOpen(true)} />
+        <main className="flex-1 overflow-y-auto p-4 md:p-6">
+          <div className="max-w-7xl mx-auto">
+            {children}
+          </div>
         </main>
       </div>
+      <Chatbot />
     </div>
-  );
-};
-
-export default Layout;
+  )
+}

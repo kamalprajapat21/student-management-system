@@ -1,41 +1,136 @@
-import axios from 'axios';
-import toast from 'react-hot-toast';
+import axios from 'axios'
+import toast from 'react-hot-toast'
 
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8000',
+  baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
-  timeout: 30000,
-});
+})
 
-// Request interceptor - attach token
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
+// Request interceptor - attach JWT token
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('access_token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
 
-// Response interceptor - handle errors
+// Response interceptor - handle auth errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    const message = error.response?.data?.detail || error.message || 'An error occurred';
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      if (!window.location.pathname.includes('/login')) {
-        window.location.href = '/login';
-      }
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('user')
+      window.location.href = '/login'
     } else if (error.response?.status === 403) {
-      toast.error('Access denied');
-    } else if (error.response?.status >= 500) {
-      toast.error('Server error. Please try again.');
+      toast.error('Access denied')
     }
-    return Promise.reject(error);
+    return Promise.reject(error)
   }
-);
+)
 
-export default api;
+export const authAPI = {
+  login: (data) => api.post('/auth/login', data),
+  registerStudent: (data) => api.post('/auth/register/student', data),
+  registerTeacher: (data) => api.post('/auth/register/teacher', data),
+  forgotPassword: (data) => api.post('/auth/forgot-password', data),
+  resetPassword: (data) => api.post('/auth/reset-password', data),
+  getMe: () => api.get('/auth/me'),
+  changePassword: (data) => api.post('/auth/change-password', data),
+}
+
+export const studentAPI = {
+  list: (params) => api.get('/students', { params }),
+  profile: () => api.get('/students/profile'),
+  attendance: () => api.get('/students/attendance'),
+  marks: () => api.get('/students/marks'),
+  assignments: () => api.get('/students/assignments'),
+  fees: () => api.get('/students/fees'),
+  get: (id) => api.get(`/students/${id}`),
+  delete: (id) => api.delete(`/students/${id}`),
+}
+
+export const teacherAPI = {
+  list: (params) => api.get('/teachers', { params }),
+  profile: () => api.get('/teachers/profile'),
+  delete: (id) => api.delete(`/teachers/${id}`),
+}
+
+export const attendanceAPI = {
+  mark: (data) => api.post('/attendance', data),
+  markBulk: (data) => api.post('/attendance/bulk', data),
+  studentAttendance: (id) => api.get(`/attendance/student/${id}`),
+  overview: (params) => api.get('/attendance/overview', { params }),
+}
+
+export const assignmentAPI = {
+  list: () => api.get('/assignments'),
+  create: (data) => api.post('/assignments', data),
+  update: (id, data) => api.put(`/assignments/${id}`, data),
+  delete: (id) => api.delete(`/assignments/${id}`),
+  submit: (id, formData) => api.post(`/assignments/${id}/submit`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  getSubmissions: (id) => api.get(`/assignments/${id}/submissions`),
+  gradeSubmission: (id, data) => api.put(`/assignments/submissions/${id}/grade`, data),
+}
+
+export const examAPI = {
+  list: (params) => api.get('/exams', { params }),
+  create: (data) => api.post('/exams', data),
+  addMarks: (data) => api.post('/exams/marks', data),
+  getMarks: (examId) => api.get(`/exams/${examId}/marks`),
+}
+
+export const feeAPI = {
+  list: (params) => api.get('/fees', { params }),
+  create: (data) => api.post('/fees', data),
+  pay: (id, data) => api.put(`/fees/${id}/pay`, data),
+  stats: () => api.get('/fees/stats'),
+}
+
+export const noticeAPI = {
+  list: () => api.get('/notices'),
+  create: (data) => api.post('/notices', data),
+  delete: (id) => api.delete(`/notices/${id}`),
+}
+
+export const notificationAPI = {
+  list: () => api.get('/notifications'),
+  markRead: (id) => api.put(`/notifications/${id}/read`),
+  markAllRead: () => api.put('/notifications/read-all'),
+}
+
+export const analyticsAPI = {
+  dashboard: () => api.get('/analytics/dashboard'),
+  attendanceTrend: () => api.get('/analytics/attendance-trend'),
+  studentAnalytics: (id) => api.get(`/analytics/student/${id}`),
+}
+
+export const aiAPI = {
+  performance: (id) => api.get(`/ai/performance/${id}`),
+  recommendations: (id) => api.get(`/ai/recommendations/${id}`),
+  chat: (message) => api.post('/ai/chat', { message }),
+}
+
+export const leaveAPI = {
+  apply: (data) => api.post('/leaves', data),
+  myLeaves: () => api.get('/leaves/my'),
+  allLeaves: () => api.get('/leaves'),
+  review: (id, data) => api.put(`/leaves/${id}/review`, data),
+}
+
+export const timetableAPI = {
+  get: (params) => api.get('/timetable', { params }),
+  create: (data) => api.post('/timetable', data),
+  delete: (id) => api.delete(`/timetable/${id}`),
+}
+
+export const parentAPI = {
+  dashboard: () => api.get('/parents/dashboard'),
+  childAttendance: () => api.get('/parents/child/attendance'),
+  childMarks: () => api.get('/parents/child/marks'),
+}
+
+export default api

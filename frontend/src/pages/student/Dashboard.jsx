@@ -1,341 +1,123 @@
-import React, { useEffect, useState } from 'react';
-import Layout from '../../components/common/Layout';
-import StatCard from '../../components/common/StatCard';
-import LoadingSpinner from '../../components/common/LoadingSpinner';
-import { useAuth } from '../../context/AuthContext';
-import {
-  analyticsService, attendanceService, examService,
-  assignmentService, feeService, noticeService, aiService
-} from '../../services';
-import {
-  ClipboardDocumentListIcon, CurrencyRupeeIcon,
-  AcademicCapIcon, BookOpenIcon, ExclamationTriangleIcon,
-  CpuChipIcon, BellIcon
-} from '@heroicons/react/24/outline';
-import {
-  Chart as ChartJS, ArcElement, Tooltip, Legend,
-  CategoryScale, LinearScale, BarElement, LineElement, PointElement
-} from 'chart.js';
-import { Doughnut, Bar, Line } from 'react-chartjs-2';
+import React, { useEffect, useState } from 'react'
+import { useAuth } from '../../context/AuthContext'
+import { studentAPI, aiAPI } from '../../services/api'
+import StatCard from '../../components/common/StatCard'
+import { UserCheck, BookMarked, ClipboardList, DollarSign, Brain, TrendingUp } from 'lucide-react'
+import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer,
+         LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
+import toast from 'react-hot-toast'
 
-ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, LineElement, PointElement);
-
-const StudentDashboard = () => {
-  const { user } = useAuth();
-  const studentId = user?.id;
-
-  const [analytics, setAnalytics] = useState(null);
-  const [upcomingExams, setUpcomingExams] = useState([]);
-  const [pendingAssignments, setPendingAssignments] = useState([]);
-  const [fees, setFees] = useState(null);
-  const [notices, setNotices] = useState([]);
-  const [aiInsights, setAiInsights] = useState(null);
-  const [loading, setLoading] = useState(true);
+export default function StudentDashboard() {
+  const { user } = useAuth()
+  const [data, setData] = useState({ attendance: null, marks: null, assignments: null, fees: null })
+  const [perf, setPerf] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const fetchAll = async () => {
-      if (!studentId) return;
+    const load = async () => {
       try {
-        const [analyticsRes, examsRes, assignmentsRes, feesRes, noticesRes] = await Promise.allSettled([
-          analyticsService.getStudentAnalytics(studentId),
-          examService.getUpcoming(),
-          assignmentService.getAll(),
-          feeService.getStudentFees(studentId),
-          noticeService.getAll({ limit: 5 }),
-        ]);
+        const [att, marks, assign, fees, perfData] = await Promise.all([
+          studentAPI.attendance(), studentAPI.marks(), studentAPI.assignments(),
+          studentAPI.fees(), aiAPI.performance(user.id)
+        ])
+        setData({ attendance: att.data, marks: marks.data, assignments: assign.data, fees: fees.data })
+        setPerf(perfData.data)
+      } catch {}
+      setLoading(false)
+    }
+    load()
+  }, [user.id])
 
-        if (analyticsRes.status === 'fulfilled') setAnalytics(analyticsRes.value.data);
-        if (examsRes.status === 'fulfilled') setUpcomingExams(examsRes.value.data.slice(0, 5));
-        if (assignmentsRes.status === 'fulfilled') {
-          const pending = assignmentsRes.value.data.filter(a => a.submission_status === 'not_submitted');
-          setPendingAssignments(pending.slice(0, 5));
-        }
-        if (feesRes.status === 'fulfilled') setFees(feesRes.value.data);
-        if (noticesRes.status === 'fulfilled') setNotices(noticesRes.value.data.notices || []);
+  if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-600 border-t-transparent" /></div>
 
-        // AI insights (non-blocking)
-        try {
-          const aiRes = await aiService.getAIDashboard(studentId);
-          setAiInsights(aiRes.data);
-        } catch {}
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchAll();
-  }, [studentId]);
+  const att = data.attendance
+  const submitted = data.assignments?.assignments?.filter(a => a.submitted).length || 0
+  const total = data.assignments?.assignments?.length || 0
+  const pendingFees = data.fees?.pending_amount || 0
 
-  const attendancePct = analytics?.attendance?.percentage || 0;
-  const assignmentRate = analytics?.assignments?.completion_rate || 0;
+  const predColors = { Excellent: 'green', Good: 'blue', Average: 'yellow', Weak: 'red' }
+  const predColor = predColors[perf?.prediction] || 'blue'
 
-  // Chart data
-  const attendanceDonut = {
-    labels: ['Present', 'Absent'],
-    datasets: [{
-      data: [analytics?.attendance?.present || 0, analytics?.attendance?.total - analytics?.attendance?.present || 0],
-      backgroundColor: ['#22c55e', '#f87171'],
-      borderWidth: 0,
-    }]
-  };
-
-  const subjectMarksBar = {
-    labels: Object.keys(analytics?.marks?.by_subject || {}),
-    datasets: [{
-      label: 'Average Score (%)',
-      data: Object.values(analytics?.marks?.by_subject || {}).map(s =>
-        s.total > 0 ? Math.round((s.obtained / s.total) * 100) : 0
-      ),
-      backgroundColor: '#3b82f6',
-      borderRadius: 6,
-    }]
-  };
-
-  if (loading) return <Layout title="Dashboard"><LoadingSpinner size="lg" className="mt-20" /></Layout>;
+  const radarData = [
+    { subject: 'Attendance', value: att?.percentage || 0 },
+    { subject: 'Avg Marks', value: data.marks?.marks?.[0] ? 70 : 0 },
+    { subject: 'Assignments', value: total > 0 ? (submitted/total)*100 : 0 },
+  ]
 
   return (
-    <Layout title="Student Dashboard">
-      <div className="space-y-6">
-        {/* Welcome Banner */}
-        <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-2xl p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold">Welcome back, {user?.full_name?.split(' ')[0]}! 👋</h2>
-              <p className="text-primary-100 mt-1">
-                {user?.department} • {user?.class_name} • Semester {user?.semester}
-              </p>
-              {aiInsights?.performance_prediction?.risk_level && (
-                <div className={`mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${
-                  aiInsights.performance_prediction.risk_level === 'low'
-                    ? 'bg-green-500/20 text-green-100'
-                    : aiInsights.performance_prediction.risk_level === 'medium'
-                    ? 'bg-yellow-500/20 text-yellow-100'
-                    : 'bg-red-500/20 text-red-100'
-                }`}>
-                  <CpuChipIcon className="w-4 h-4" />
-                  AI Risk: {aiInsights.performance_prediction.risk_level.charAt(0).toUpperCase() + aiInsights.performance_prediction.risk_level.slice(1)}
-                </div>
-              )}
-            </div>
-            <div className="hidden sm:block text-right">
-              <p className="text-primary-100 text-sm">Today</p>
-              <p className="text-white font-semibold">{new Date().toLocaleDateString('en-IN', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Stats Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <StatCard
-            title="Attendance"
-            value={`${attendancePct}%`}
-            icon={ClipboardDocumentListIcon}
-            color={attendancePct >= 75 ? 'green' : attendancePct >= 60 ? 'yellow' : 'red'}
-            subtitle={attendancePct >= 75 ? '✅ Safe' : '⚠️ Below 75%'}
-          />
-          <StatCard
-            title="Pending Assignments"
-            value={pendingAssignments.length}
-            icon={BookOpenIcon}
-            color="blue"
-            subtitle={`${analytics?.assignments?.completion_rate || 0}% completed`}
-          />
-          <StatCard
-            title="Fee Due"
-            value={`₹${fees?.summary?.total_due?.toFixed(0) || '0'}`}
-            icon={CurrencyRupeeIcon}
-            color={fees?.summary?.total_due > 0 ? 'red' : 'green'}
-            subtitle={fees?.summary?.total_due > 0 ? 'Payment pending' : 'All clear!'}
-          />
-          <StatCard
-            title="Upcoming Exams"
-            value={upcomingExams.length}
-            icon={AcademicCapIcon}
-            color="purple"
-            subtitle="Next 30 days"
-          />
-        </div>
-
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Attendance Donut */}
-          <div className="card">
-            <h3 className="section-title">Attendance Overview</h3>
-            <div className="flex items-center justify-center">
-              <div className="w-48 h-48">
-                <Doughnut
-                  data={attendanceDonut}
-                  options={{
-                    cutout: '70%',
-                    plugins: {
-                      legend: { position: 'bottom', labels: { padding: 16, font: { size: 12 } } }
-                    }
-                  }}
-                />
-              </div>
-            </div>
-            <div className="mt-4 text-center">
-              <p className="text-3xl font-bold text-gray-900 dark:text-white">{attendancePct}%</p>
-              <p className={`text-sm font-medium ${attendancePct >= 75 ? 'text-green-600' : 'text-red-600'}`}>
-                {attendancePct >= 75 ? '✅ Safe' : attendancePct >= 60 ? '⚠️ Warning' : '🔴 Critical'}
-              </p>
-            </div>
-          </div>
-
-          {/* Subject Marks */}
-          <div className="card lg:col-span-2">
-            <h3 className="section-title">Subject-wise Performance</h3>
-            {Object.keys(analytics?.marks?.by_subject || {}).length > 0 ? (
-              <Bar
-                data={subjectMarksBar}
-                options={{
-                  responsive: true,
-                  plugins: { legend: { display: false } },
-                  scales: {
-                    y: { beginAtZero: true, max: 100, ticks: { callback: (v) => `${v}%` } },
-                    x: { grid: { display: false } }
-                  }
-                }}
-              />
-            ) : (
-              <div className="h-40 flex items-center justify-center text-gray-400">No marks data yet</div>
-            )}
-          </div>
-        </div>
-
-        {/* Bottom Sections */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Upcoming Exams */}
-          <div className="card">
-            <h3 className="section-title flex items-center gap-2">
-              <AcademicCapIcon className="w-5 h-5 text-purple-500" />
-              Upcoming Exams
-            </h3>
-            {upcomingExams.length === 0 ? (
-              <p className="text-gray-400 text-sm text-center py-4">No upcoming exams</p>
-            ) : (
-              <div className="space-y-3">
-                {upcomingExams.map((exam) => (
-                  <div key={exam.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">{exam.subject}</p>
-                      <p className="text-xs text-gray-500">{exam.exam_type}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs font-medium text-primary-600">{exam.exam_date}</p>
-                      <p className="text-xs text-gray-500">{exam.start_time}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Pending Assignments */}
-          <div className="card">
-            <h3 className="section-title flex items-center gap-2">
-              <BookOpenIcon className="w-5 h-5 text-blue-500" />
-              Pending Assignments
-            </h3>
-            {pendingAssignments.length === 0 ? (
-              <p className="text-gray-400 text-sm text-center py-4">All assignments submitted! ✅</p>
-            ) : (
-              <div className="space-y-3">
-                {pendingAssignments.map((assignment) => {
-                  const due = new Date(assignment.due_date);
-                  const isOverdue = due < new Date();
-                  return (
-                    <div key={assignment.id} className={`p-3 rounded-lg ${isOverdue ? 'bg-red-50 dark:bg-red-900/20' : 'bg-gray-50 dark:bg-gray-700'}`}>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{assignment.title}</p>
-                      <div className="flex justify-between items-center mt-1">
-                        <span className="text-xs text-gray-500">{assignment.subject}</span>
-                        <span className={`text-xs font-medium ${isOverdue ? 'text-red-600' : 'text-primary-600'}`}>
-                          {isOverdue ? 'Overdue' : `Due: ${assignment.due_date?.slice(0, 10)}`}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Notices */}
-          <div className="card">
-            <h3 className="section-title flex items-center gap-2">
-              <BellIcon className="w-5 h-5 text-yellow-500" />
-              Latest Notices
-            </h3>
-            {notices.length === 0 ? (
-              <p className="text-gray-400 text-sm text-center py-4">No notices</p>
-            ) : (
-              <div className="space-y-3">
-                {notices.map((notice) => (
-                  <div key={notice.id} className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <div className="flex items-start gap-2">
-                      {notice.priority === 'urgent' && <ExclamationTriangleIcon className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />}
-                      <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white">{notice.title}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">{notice.content?.slice(0, 80)}...</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* AI Insights */}
-        {aiInsights && (
-          <div className="card border-l-4 border-l-purple-500">
-            <div className="flex items-center gap-2 mb-4">
-              <CpuChipIcon className="w-5 h-5 text-purple-500" />
-              <h3 className="section-title mb-0">AI-Powered Insights</h3>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
-                <p className="text-xs font-medium text-purple-600 dark:text-purple-400 mb-1">PERFORMANCE RISK</p>
-                <p className={`text-xl font-bold capitalize ${
-                  aiInsights.performance_prediction?.risk_level === 'low' ? 'text-green-600' :
-                  aiInsights.performance_prediction?.risk_level === 'medium' ? 'text-yellow-600' : 'text-red-600'
-                }`}>
-                  {aiInsights.performance_prediction?.risk_level || 'N/A'}
-                </p>
-              </div>
-              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
-                <p className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">PREDICTED ATTENDANCE</p>
-                <p className="text-xl font-bold text-blue-700 dark:text-blue-300">
-                  {aiInsights.attendance_prediction?.predicted_final_percentage || 0}%
-                </p>
-                <p className={`text-xs capitalize ${
-                  aiInsights.attendance_prediction?.status === 'safe' ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {aiInsights.attendance_prediction?.status}
-                </p>
-              </div>
-              <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4">
-                <p className="text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">RECOMMENDATIONS</p>
-                <p className="text-xl font-bold text-orange-700 dark:text-orange-300">
-                  {aiInsights.recommendations?.recommendations?.length || 0}
-                </p>
-                <p className="text-xs text-gray-500">subjects to focus on</p>
-              </div>
-            </div>
-            {aiInsights.performance_prediction?.recommendations?.length > 0 && (
-              <ul className="mt-4 space-y-1">
-                {aiInsights.performance_prediction.recommendations.map((rec, i) => (
-                  <li key={i} className="text-sm text-gray-600 dark:text-gray-400 flex items-start gap-2">
-                    <span className="text-purple-500 mt-0.5">•</span>
-                    {rec}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Welcome, {user?.full_name} 👋</h1>
+        <p className="text-gray-500 dark:text-gray-400">Here is your academic overview</p>
       </div>
-    </Layout>
-  );
-};
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard title="Attendance" value={`${att?.percentage || 0}%`} icon={UserCheck}
+          color={att?.percentage >= 75 ? 'green' : 'red'}
+          subtitle={`${att?.present || 0}/${att?.total_classes || 0} classes`} />
+        <StatCard title="Assignments Done" value={`${submitted}/${total}`} icon={ClipboardList} color="blue" />
+        <StatCard title="Pending Fees" value={`₹${pendingFees.toLocaleString()}`} icon={DollarSign}
+          color={pendingFees > 0 ? 'red' : 'green'} />
+        <StatCard title="AI Prediction" value={perf?.prediction || 'N/A'} icon={Brain} color={predColor} />
+      </div>
 
-export default StudentDashboard;
+      {att?.percentage < 75 && (
+        <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+          <p className="font-semibold text-red-800 dark:text-red-300">⚠ Attendance Warning</p>
+          <p className="text-sm text-red-700 dark:text-red-400 mt-1">
+            Your attendance ({att?.percentage}%) is below the required 75%. Attend more classes to avoid shortage.
+          </p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="card">
+          <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Performance Radar</h3>
+          <ResponsiveContainer width="100%" height={200}>
+            <RadarChart data={radarData}>
+              <PolarGrid />
+              <PolarAngleAxis dataKey="subject" tick={{ fill: '#6b7280', fontSize: 12 }} />
+              <Radar dataKey="value" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} />
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="card">
+          <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Recent Marks</h3>
+          <div className="space-y-3">
+            {(data.marks?.marks || []).slice(0, 5).map((m, i) => (
+              <div key={i} className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">{m.exam_title}</p>
+                  <p className="text-xs text-gray-500">{m.exam_type}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-gray-900 dark:text-white">{m.marks_obtained}/{m.total_marks}</p>
+                  <span className={`badge ${m.percentage >= 60 ? 'badge-green' : 'badge-red'}`}>
+                    {m.grade || `${m.percentage}%`}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {!data.marks?.marks?.length && <p className="text-gray-500 text-sm">No marks recorded yet.</p>}
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Pending Assignments</h3>
+        <div className="space-y-2">
+          {(data.assignments?.assignments || []).filter(a => !a.submitted).slice(0, 5).map(a => (
+            <div key={a.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">{a.title}</p>
+                <p className="text-xs text-gray-500">Due: {new Date(a.deadline).toLocaleDateString()}</p>
+              </div>
+              <span className="badge badge-yellow">Pending</span>
+            </div>
+          ))}
+          {!(data.assignments?.assignments || []).filter(a => !a.submitted).length &&
+            <p className="text-green-600 dark:text-green-400 text-sm">All assignments submitted! 🎉</p>}
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -1,165 +1,64 @@
-import React, { useEffect, useState } from 'react';
-import Layout from '../../components/common/Layout';
-import LoadingSpinner from '../../components/common/LoadingSpinner';
-import { analyticsService } from '../../services';
-import { Bar, Doughnut, Line } from 'react-chartjs-2';
-import { ArrowDownTrayIcon } from '@heroicons/react/24/outline';
-import {
-  Chart as ChartJS,
-  CategoryScale, LinearScale, BarElement,
-  ArcElement, PointElement, LineElement,
-  Tooltip, Legend
-} from 'chart.js';
+import React, { useEffect, useState } from 'react'
+import { analyticsAPI } from '../../services/api'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line } from 'recharts'
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, PointElement, LineElement, Tooltip, Legend);
-
-const AdminAnalytics = () => {
-  const [overview, setOverview] = useState(null);
-  const [loading, setLoading] = useState(true);
+export default function AdminAnalytics() {
+  const [data, setData] = useState(null)
+  const [trend, setTrend] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    analyticsService.getAdminOverview()
-      .then(({ data }) => setOverview(data))
-      .finally(() => setLoading(false));
-  }, []);
+    Promise.all([analyticsAPI.dashboard(), analyticsAPI.attendanceTrend()])
+      .then(([d, t]) => { setData(d.data); setTrend(t.data.trend?.slice().reverse() || []) })
+      .finally(() => setLoading(false))
+  }, [])
 
-  const exportExcel = async () => {
-    try {
-      const response = await analyticsService.exportExcel();
-      const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'analytics_report.xlsx';
-      link.click();
-    } catch {}
-  };
+  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-600 border-t-transparent" /></div>
 
-  const deptChartData = overview ? {
-    labels: overview.department_distribution?.map(d => d.department) || [],
-    datasets: [{
-      data: overview.department_distribution?.map(d => d.count) || [],
-      backgroundColor: ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899'],
-    }]
-  } : null;
-
-  const attendanceChartData = overview ? {
-    labels: overview.weekly_attendance?.map(d => d.date) || [],
-    datasets: [{
-      label: 'Attendance %',
-      data: overview.weekly_attendance?.map(d => d.percentage) || [],
-      borderColor: '#3b82f6',
-      backgroundColor: 'rgba(59, 130, 246, 0.1)',
-      fill: true,
-      tension: 0.4,
-    }]
-  } : null;
-
-  const feeChartData = overview ? {
-    labels: ['Paid', 'Pending', 'Overdue'],
-    datasets: [{
-      data: [overview.fee_stats?.total_paid, overview.fee_stats?.total_pending, overview.fee_stats?.total_overdue],
-      backgroundColor: ['#22c55e', '#f59e0b', '#ef4444'],
-    }]
-  } : null;
+  const gradeData = Object.entries(data?.grade_distribution || {}).map(([grade, count]) => ({ grade, count }))
 
   return (
-    <Layout title="Admin Analytics">
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h2 className="page-title">Analytics Dashboard</h2>
-          <button onClick={exportExcel} className="btn-secondary flex items-center gap-2">
-            <ArrowDownTrayIcon className="w-4 h-4" />
-            Export Excel
-          </button>
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Analytics & Reports</h1>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="card">
+          <h3 className="font-semibold mb-4">30-Day Attendance Trend</h3>
+          <ResponsiveContainer width="100%" height={250}>
+            <LineChart data={trend.slice(-15)}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={d => d?.slice(5)} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip />
+              <Line type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
-
-        {loading ? <LoadingSpinner className="py-12" /> : overview && (
-          <>
-            {/* Stats cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {[
-                { label: 'Total Students', value: overview.total_students || 0, color: 'text-blue-600' },
-                { label: 'Total Teachers', value: overview.total_teachers || 0, color: 'text-green-600' },
-                { label: 'Total Parents', value: overview.total_parents || 0, color: 'text-purple-600' },
-                { label: 'Avg Attendance', value: `${overview.overall_attendance_percentage || 0}%`, color: 'text-orange-600' },
-              ].map(({ label, value, color }) => (
-                <div key={label} className="card text-center">
-                  <p className={`text-3xl font-bold ${color}`}>{value}</p>
-                  <p className="text-sm text-gray-500 mt-1">{label}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Charts row */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="card lg:col-span-2">
-                <h3 className="section-title">Weekly Attendance Trend</h3>
-                {attendanceChartData && (
-                  <Line data={attendanceChartData} options={{
-                    responsive: true,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => `${v}%` } } }
-                  }} />
-                )}
-              </div>
-              <div className="card">
-                <h3 className="section-title">Department Distribution</h3>
-                {deptChartData && (
-                  <div className="h-64">
-                    <Doughnut data={deptChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }} />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Fee stats */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="card">
-                <h3 className="section-title">Fee Collection Status</h3>
-                <div className="grid grid-cols-3 gap-4 mb-6">
-                  <div className="text-center">
-                    <p className="text-xl font-bold text-green-600">₹{overview.fee_stats?.total_paid_amount?.toLocaleString() || 0}</p>
-                    <p className="text-xs text-gray-500">Collected</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xl font-bold text-yellow-600">₹{overview.fee_stats?.total_pending_amount?.toLocaleString() || 0}</p>
-                    <p className="text-xs text-gray-500">Pending</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xl font-bold text-red-600">₹{overview.fee_stats?.total_overdue_amount?.toLocaleString() || 0}</p>
-                    <p className="text-xs text-gray-500">Overdue</p>
-                  </div>
-                </div>
-                {feeChartData && (
-                  <div className="h-48">
-                    <Doughnut data={feeChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }} />
-                  </div>
-                )}
-              </div>
-
-              <div className="card">
-                <h3 className="section-title">Attendance by Department</h3>
-                <div className="space-y-3">
-                  {overview.department_distribution?.map((dept) => (
-                    <div key={dept.department}>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="font-medium text-gray-700 dark:text-gray-300">{dept.department}</span>
-                        <span className="text-gray-500">{dept.count} students</span>
-                      </div>
-                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                        <div className="bg-primary-600 h-2 rounded-full" style={{ width: `${Math.min((dept.count / overview.total_students) * 100 * 3, 100)}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
+        <div className="card">
+          <h3 className="font-semibold mb-4">Grade Distribution</h3>
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={gradeData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="grade" tick={{ fontSize: 12 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip />
+              <Bar dataKey="count" fill="#8b5cf6" radius={[4,4,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
-    </Layout>
-  );
-};
-
-export default AdminAnalytics;
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          ['Total Students', data?.total_students, 'blue'],
+          ['Total Teachers', data?.total_teachers, 'purple'],
+          ['Attendance %', `${data?.attendance_percentage}%`, 'green'],
+          ['Total Assignments', data?.total_assignments, 'orange'],
+        ].map(([label, value, color]) => (
+          <div key={label} className={`card text-center bg-${color}-50 dark:bg-${color}-900/20`}>
+            <p className={`text-3xl font-bold text-${color}-600 dark:text-${color}-400`}>{value}</p>
+            <p className="text-sm text-gray-500 mt-1">{label}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}

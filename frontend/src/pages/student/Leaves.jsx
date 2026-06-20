@@ -1,134 +1,75 @@
-import React, { useEffect, useState } from 'react';
-import Layout from '../../components/common/Layout';
-import Modal from '../../components/common/Modal';
-import LoadingSpinner from '../../components/common/LoadingSpinner';
-import { leaveService } from '../../services';
-import toast from 'react-hot-toast';
+import React, { useEffect, useState } from 'react'
+import { leaveAPI } from '../../services/api'
+import toast from 'react-hot-toast'
+import Modal from '../../components/common/Modal'
 
-const statusColors = { pending: 'badge-yellow', approved: 'badge-green', rejected: 'badge-red' };
+export default function Leaves() {
+  const [leaves, setLeaves] = useState([])
+  const [modal, setModal] = useState(false)
+  const [form, setForm] = useState({ reason: '', from_date: '', to_date: '' })
+  const [loading, setLoading] = useState(false)
 
-const Leaves = () => {
-  const [leaves, setLeaves] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [applying, setApplying] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ leave_type: 'sick', start_date: '', end_date: '', reason: '' });
+  const load = () => leaveAPI.myLeaves().then(r => setLeaves(r.data.leaves || [])).catch(() => {})
+  useEffect(load, [])
 
-  useEffect(() => { fetchLeaves(); }, []);
-
-  const fetchLeaves = async () => {
-    setLoading(true);
+  const submit = async () => {
+    if (!form.reason || !form.from_date || !form.to_date) return toast.error('Fill all fields')
+    setLoading(true)
     try {
-      const { data } = await leaveService.getMyLeaves();
-      setLeaves(data);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleApply = async (e) => {
-    e.preventDefault();
-    setApplying(true);
-    try {
-      await leaveService.apply(form);
-      toast.success('Leave application submitted!');
-      setShowModal(false);
-      setForm({ leave_type: 'sick', start_date: '', end_date: '', reason: '' });
-      fetchLeaves();
+      await leaveAPI.apply(form)
+      toast.success('Leave application submitted')
+      setModal(false)
+      setForm({ reason: '', from_date: '', to_date: '' })
+      load()
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to apply');
+      toast.error(err.response?.data?.detail || 'Failed')
     } finally {
-      setApplying(false);
+      setLoading(false)
     }
-  };
+  }
+
+  const statusColor = { pending: 'badge-yellow', approved: 'badge-green', rejected: 'badge-red' }
 
   return (
-    <Layout title="Leave Application">
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h2 className="page-title">My Leaves</h2>
-          <button onClick={() => setShowModal(true)} className="btn-primary">Apply for Leave</button>
-        </div>
-
-        {loading ? <LoadingSpinner className="py-12" /> : (
-          <div className="card">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 dark:border-gray-700">
-                    {['Type', 'From', 'To', 'Days', 'Reason', 'Status', 'Remarks'].map(h => (
-                      <th key={h} className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {leaves.map((leave) => {
-                    const days = Math.ceil((new Date(leave.end_date) - new Date(leave.start_date)) / (1000 * 60 * 60 * 24)) + 1;
-                    return (
-                      <tr key={leave.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <td className="py-3 px-4 capitalize font-medium text-gray-900 dark:text-white">{leave.leave_type}</td>
-                        <td className="py-3 px-4 text-gray-600">{leave.start_date}</td>
-                        <td className="py-3 px-4 text-gray-600">{leave.end_date}</td>
-                        <td className="py-3 px-4 text-gray-600">{days}</td>
-                        <td className="py-3 px-4 text-gray-600 max-w-xs truncate">{leave.reason}</td>
-                        <td className="py-3 px-4">
-                          <span className={`badge ${statusColors[leave.status]}`}>{leave.status}</span>
-                        </td>
-                        <td className="py-3 px-4 text-gray-500">{leave.remarks || '-'}</td>
-                      </tr>
-                    );
-                  })}
-                  {leaves.length === 0 && (
-                    <tr><td colSpan={7} className="py-8 text-center text-gray-400">No leave applications</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Leave Applications</h1>
+        <button onClick={() => setModal(true)} className="btn-primary">Apply for Leave</button>
       </div>
-
-      <Modal
-        isOpen={showModal}
-        onClose={() => setShowModal(false)}
-        title="Apply for Leave"
-        footer={
-          <>
-            <button onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
-            <button onClick={handleApply} disabled={applying} className="btn-primary">
-              {applying ? <LoadingSpinner size="sm" /> : 'Submit Application'}
-            </button>
-          </>
-        }
-      >
-        <form className="space-y-4">
-          <div>
-            <label className="label">Leave Type</label>
-            <select className="input" value={form.leave_type} onChange={(e) => setForm(p => ({ ...p, leave_type: e.target.value }))}>
-              <option value="sick">Sick Leave</option>
-              <option value="personal">Personal Leave</option>
-              <option value="family">Family Emergency</option>
-              <option value="other">Other</option>
-            </select>
+      <div className="space-y-3">
+        {leaves.map(l => (
+          <div key={l.id} className="card">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-medium">{l.reason}</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {new Date(l.from_date).toLocaleDateString()} – {new Date(l.to_date).toLocaleDateString()}
+                </p>
+                <p className="text-xs text-gray-400">Applied: {new Date(l.applied_at).toLocaleDateString()}</p>
+              </div>
+              <span className={`badge ${statusColor[l.status]}`}>{l.status}</span>
+            </div>
           </div>
+        ))}
+        {!leaves.length && <div className="card text-center text-gray-500">No leave applications found.</div>}
+      </div>
+      <Modal open={modal} onClose={() => setModal(false)} title="Apply for Leave">
+        <div className="space-y-4">
+          <div><label className="label">Reason</label>
+            <textarea className="input h-24 resize-none" value={form.reason}
+              onChange={e => setForm(p => ({...p, reason: e.target.value}))} placeholder="Reason for leave..." /></div>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="label">From Date</label>
-              <input type="date" className="input" value={form.start_date} onChange={(e) => setForm(p => ({ ...p, start_date: e.target.value }))} required />
-            </div>
-            <div>
-              <label className="label">To Date</label>
-              <input type="date" className="input" value={form.end_date} onChange={(e) => setForm(p => ({ ...p, end_date: e.target.value }))} required />
-            </div>
+            <div><label className="label">From Date</label>
+              <input type="date" className="input" value={form.from_date} onChange={e => setForm(p => ({...p, from_date: e.target.value}))} /></div>
+            <div><label className="label">To Date</label>
+              <input type="date" className="input" value={form.to_date} onChange={e => setForm(p => ({...p, to_date: e.target.value}))} /></div>
           </div>
-          <div>
-            <label className="label">Reason</label>
-            <textarea className="input min-h-[80px] resize-none" placeholder="Explain your reason..." value={form.reason} onChange={(e) => setForm(p => ({ ...p, reason: e.target.value }))} required />
+          <div className="flex gap-3">
+            <button onClick={() => setModal(false)} className="btn-secondary flex-1">Cancel</button>
+            <button onClick={submit} disabled={loading} className="btn-primary flex-1">{loading ? 'Submitting...' : 'Submit'}</button>
           </div>
-        </form>
+        </div>
       </Modal>
-    </Layout>
-  );
-};
-
-export default Leaves;
+    </div>
+  )
+}

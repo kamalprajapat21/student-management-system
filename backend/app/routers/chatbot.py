@@ -9,9 +9,11 @@ from datetime import datetime
 router = APIRouter(prefix="/api/chatbot", tags=["Chatbot"])
 
 
+from typing import Optional
+
 class ChatMessage(BaseModel):
     message: str
-    conversation_id: str = None
+    conversation_id: Optional[str] = None
 
 
 @router.post("/chat")

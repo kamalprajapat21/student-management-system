@@ -1,204 +1,133 @@
-import React, { useEffect, useState } from 'react';
-import Layout from '../../components/common/Layout';
-import Modal from '../../components/common/Modal';
-import LoadingSpinner from '../../components/common/LoadingSpinner';
-import { assignmentService } from '../../services';
-import { useAuth } from '../../context/AuthContext';
-import { PaperClipIcon, CheckCircleIcon, ClockIcon } from '@heroicons/react/24/outline';
-import toast from 'react-hot-toast';
+import React, { useEffect, useState } from 'react'
+import { studentAPI, assignmentAPI } from '../../services/api'
+import toast from 'react-hot-toast'
+import Modal from '../../components/common/Modal'
+import { Upload, CheckCircle, Clock, AlertCircle } from 'lucide-react'
 
-const statusBadge = {
-  not_submitted: 'badge-red',
-  submitted: 'badge-green',
-  late: 'badge-yellow',
-  graded: 'badge-blue',
-};
+export default function Assignments() {
+  const [assignments, setAssignments] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [submitModal, setSubmitModal] = useState(null)
+  const [textContent, setTextContent] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
-const Assignments = () => {
-  const { user } = useAuth();
-  const [assignments, setAssignments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedAssignment, setSelectedAssignment] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitForm, setSubmitForm] = useState({ content: '', file: null });
+  const load = () => {
+    studentAPI.assignments().then(r => { setAssignments(r.data.assignments || []); setLoading(false) }).catch(() => setLoading(false))
+  }
+  useEffect(load, [])
 
-  useEffect(() => {
-    fetchAssignments();
-  }, []);
-
-  const fetchAssignments = async () => {
-    setLoading(true);
+  const submit = async () => {
+    if (!textContent.trim()) return toast.error('Please enter your answer')
+    setSubmitting(true)
     try {
-      const { data } = await assignmentService.getAll();
-      setAssignments(data);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!selectedAssignment) return;
-    setSubmitting(true);
-    try {
-      const formData = new FormData();
-      if (submitForm.content) formData.append('content', submitForm.content);
-      if (submitForm.file) formData.append('file', submitForm.file);
-      await assignmentService.submit(selectedAssignment.id, formData);
-      toast.success('Assignment submitted!');
-      setSelectedAssignment(null);
-      setSubmitForm({ content: '', file: null });
-      fetchAssignments();
+      await assignmentAPI.submit(submitModal.id, textContent)
+      toast.success('Assignment submitted!')
+      setSubmitModal(null)
+      setTextContent('')
+      load()
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Submission failed');
+      toast.error(err.response?.data?.detail || 'Submission failed')
     } finally {
-      setSubmitting(false);
+      setSubmitting(false)
     }
-  };
+  }
 
-  const pending = assignments.filter(a => a.submission_status === 'not_submitted');
-  const submitted = assignments.filter(a => a.submission_status !== 'not_submitted');
+  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-600 border-t-transparent" /></div>
+
+  const pending = assignments.filter(a => !a.submitted)
+  const submitted = assignments.filter(a => a.submitted)
 
   return (
-    <Layout title="Assignments">
-      <div className="space-y-6">
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
-          <div className="card text-center">
-            <p className="text-sm text-gray-500">Total</p>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">{assignments.length}</p>
-          </div>
-          <div className="card text-center">
-            <p className="text-sm text-gray-500">Pending</p>
-            <p className="text-3xl font-bold text-red-500">{pending.length}</p>
-          </div>
-          <div className="card text-center">
-            <p className="text-sm text-gray-500">Submitted</p>
-            <p className="text-3xl font-bold text-green-500">{submitted.length}</p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Assignments</h1>
+        <div className="flex gap-2">
+          <span className="badge badge-yellow">{pending.length} Pending</span>
+          <span className="badge badge-green">{submitted.length} Submitted</span>
+        </div>
+      </div>
+      {pending.length > 0 && (
+        <div>
+          <h2 className="font-semibold text-gray-700 dark:text-gray-300 mb-3">Pending</h2>
+          <div className="space-y-3">
+            {pending.map(a => {
+              const isOverdue = new Date(a.deadline) < new Date()
+              return (
+                <div key={a.id} className="card border-l-4 border-l-yellow-400">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <h3 className="font-semibold">{a.title}</h3>
+                      <p className="text-sm text-gray-500 mt-1">{a.description}</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        {isOverdue ? <AlertCircle className="h-4 w-4 text-red-500" /> : <Clock className="h-4 w-4 text-yellow-500" />}
+                        <span className={`text-xs ${isOverdue ? 'text-red-600' : 'text-gray-500'}`}>
+                          Due: {new Date(a.deadline).toLocaleString()}
+                          {isOverdue ? ' (Overdue)' : ''}
+                        </span>
+                        <span className="text-xs text-gray-500">• Max: {a.max_marks} marks</span>
+                      </div>
+                    </div>
+                    <button onClick={() => setSubmitModal(a)} className="btn-primary text-sm flex items-center gap-1 whitespace-nowrap">
+                      <Upload className="h-4 w-4" /> Submit
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
-
-        {loading ? <LoadingSpinner className="py-12" /> : (
-          <>
-            {/* Pending Assignments */}
-            {pending.length > 0 && (
-              <div>
-                <h3 className="section-title">Pending Assignments</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {pending.map((a) => {
-                    const due = new Date(a.due_date);
-                    const isOverdue = due < new Date();
-                    const daysLeft = Math.ceil((due - new Date()) / (1000 * 60 * 60 * 24));
-                    return (
-                      <div key={a.id} className={`card hover:shadow-md transition-shadow border-l-4 ${isOverdue ? 'border-l-red-500' : daysLeft <= 2 ? 'border-l-yellow-500' : 'border-l-blue-500'}`}>
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <h4 className="font-semibold text-gray-900 dark:text-white">{a.title}</h4>
-                            <p className="text-sm text-gray-500 mt-1">{a.subject}</p>
-                            <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 line-clamp-2">{a.description}</p>
-                          </div>
-                          <span className={`badge ${isOverdue ? 'badge-red' : 'badge-yellow'} ml-2`}>
-                            {isOverdue ? 'Overdue' : `${daysLeft}d left`}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between mt-4">
-                          <div className="flex items-center gap-2 text-sm text-gray-500">
-                            <ClockIcon className="w-4 h-4" />
-                            Due: {a.due_date?.slice(0, 10)}
-                          </div>
-                          <button
-                            onClick={() => setSelectedAssignment(a)}
-                            className="btn-primary text-sm py-1.5 px-4"
-                          >
-                            Submit
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+      )}
+      {submitted.length > 0 && (
+        <div>
+          <h2 className="font-semibold text-gray-700 dark:text-gray-300 mb-3">Submitted</h2>
+          <div className="space-y-3">
+            {submitted.map(a => (
+              <div key={a.id} className="card border-l-4 border-l-green-400">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="font-semibold">{a.title}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                      <span className="text-xs text-green-600 dark:text-green-400">
+                        Submitted {new Date(a.submission?.submitted_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    {a.submission?.marks_obtained != null && (
+                      <p className="font-bold text-primary-600">{a.submission.marks_obtained}/{a.max_marks}</p>
+                    )}
+                    <span className={`badge ${a.submission?.status === 'graded' ? 'badge-blue' : 'badge-green'}`}>
+                      {a.submission?.status}
+                    </span>
+                  </div>
                 </div>
+                {a.submission?.feedback && (
+                  <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-xs text-blue-700 dark:text-blue-300">
+                    Feedback: {a.submission.feedback}
+                  </div>
+                )}
               </div>
-            )}
-
-            {/* Submitted */}
-            <div>
-              <h3 className="section-title">All Assignments</h3>
-              <div className="card overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200 dark:border-gray-700">
-                      {['Title', 'Subject', 'Due Date', 'Status', 'Marks'].map(h => (
-                        <th key={h} className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                    {assignments.map((a) => (
-                      <tr key={a.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <td className="py-3 px-4 font-medium text-gray-900 dark:text-white">{a.title}</td>
-                        <td className="py-3 px-4 text-gray-500">{a.subject}</td>
-                        <td className="py-3 px-4 text-gray-500">{a.due_date?.slice(0, 10)}</td>
-                        <td className="py-3 px-4">
-                          <span className={`badge ${statusBadge[a.submission_status] || 'badge-blue'}`}>
-                            {a.submission_status?.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-gray-500">
-                          {a.submission?.marks_obtained !== null && a.submission?.marks_obtained !== undefined
-                            ? `${a.submission.marks_obtained}/${a.total_marks}`
-                            : '-'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Submit Modal */}
-      <Modal
-        isOpen={!!selectedAssignment}
-        onClose={() => { setSelectedAssignment(null); setSubmitForm({ content: '', file: null }); }}
-        title={`Submit: ${selectedAssignment?.title}`}
-        footer={
-          <>
-            <button onClick={() => setSelectedAssignment(null)} className="btn-secondary">Cancel</button>
-            <button onClick={handleSubmit} disabled={submitting} className="btn-primary">
-              {submitting ? <LoadingSpinner size="sm" /> : 'Submit Assignment'}
-            </button>
-          </>
-        }
-      >
+            ))}
+          </div>
+        </div>
+      )}
+      <Modal open={!!submitModal} onClose={() => setSubmitModal(null)} title={`Submit: ${submitModal?.title}`}>
         <div className="space-y-4">
+          <p className="text-sm text-gray-500">Due: {submitModal && new Date(submitModal.deadline).toLocaleString()}</p>
           <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Subject: {selectedAssignment?.subject}</p>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Due: {selectedAssignment?.due_date?.slice(0, 16)}</p>
-            <p className="text-sm text-gray-700 dark:text-gray-300 mt-2">{selectedAssignment?.description}</p>
+            <label className="label">Your Answer</label>
+            <textarea className="input h-40 resize-none" value={textContent}
+              onChange={e => setTextContent(e.target.value)} placeholder="Type your answer here..." />
           </div>
-          <div>
-            <label className="label">Your Answer / Notes</label>
-            <textarea
-              className="input min-h-[120px] resize-y"
-              placeholder="Write your answer here..."
-              value={submitForm.content}
-              onChange={(e) => setSubmitForm(p => ({ ...p, content: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="label">Attach File (Optional)</label>
-            <input
-              type="file"
-              className="input"
-              onChange={(e) => setSubmitForm(p => ({ ...p, file: e.target.files[0] }))}
-            />
+          <div className="flex gap-3">
+            <button onClick={() => setSubmitModal(null)} className="btn-secondary flex-1">Cancel</button>
+            <button onClick={submit} disabled={submitting} className="btn-primary flex-1">
+              {submitting ? 'Submitting...' : 'Submit Assignment'}
+            </button>
           </div>
         </div>
       </Modal>
-    </Layout>
-  );
-};
-
-export default Assignments;
+    </div>
+  )
+}

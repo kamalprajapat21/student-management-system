@@ -1,48 +1,28 @@
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import date, datetime
-from enum import Enum
+from sqlalchemy import Column, Integer, Date, ForeignKey, DateTime, Enum as SAEnum
+from sqlalchemy.orm import relationship
+from datetime import datetime
+import enum
+from app.database import Base
 
 
-class AttendanceStatus(str, Enum):
+class AttendanceStatus(str, enum.Enum):
     present = "present"
     absent = "absent"
     late = "late"
     excused = "excused"
 
 
-class AttendanceRecord(BaseModel):
-    student_id: str
-    date: str  # ISO date string
-    status: AttendanceStatus
-    subject: str
-    marked_by: str  # teacher_id
-    class_id: str
-    remarks: Optional[str] = None
+class Attendance(Base):
+    __tablename__ = "attendance"
 
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject_id = Column(Integer, ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True)
+    date = Column(Date, nullable=False, index=True)
+    status = Column(SAEnum(AttendanceStatus), nullable=False, default=AttendanceStatus.present)
+    marked_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-class BulkAttendanceRecord(BaseModel):
-    date: str
-    subject: str
-    class_id: str
-    marked_by: str
-    records: List[dict]  # [{student_id, status, remarks}]
-
-
-class AttendanceFilter(BaseModel):
-    student_id: Optional[str] = None
-    class_id: Optional[str] = None
-    subject: Optional[str] = None
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    status: Optional[AttendanceStatus] = None
-
-
-class AttendanceSummary(BaseModel):
-    student_id: str
-    total_classes: int
-    present: int
-    absent: int
-    late: int
-    percentage: float
-    status: str  # Safe / Warning / Critical
+    student = relationship("User", foreign_keys=[student_id], backref="attendances")
+    subject = relationship("Subject", back_populates="attendance_records")
+    marked_by = relationship("User", foreign_keys=[marked_by_id], back_populates="attendance_marked")

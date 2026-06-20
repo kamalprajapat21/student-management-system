@@ -1,35 +1,18 @@
-from pydantic import BaseModel
-from typing import Optional, List
-from enum import Enum
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey
+from sqlalchemy.orm import relationship
+from datetime import datetime
+from app.database import Base
 
 
-class NotificationType(str, Enum):
-    attendance_alert = "attendance_alert"
-    fee_reminder = "fee_reminder"
-    assignment_reminder = "assignment_reminder"
-    practical_alert = "practical_alert"
-    exam_alert = "exam_alert"
-    notice_alert = "notice_alert"
-    leave_update = "leave_update"
-    marks_uploaded = "marks_uploaded"
-    general = "general"
+class Notification(Base):
+    __tablename__ = "notifications"
 
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    notification_type = Column(String(50), default="general")
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-class NotificationCreate(BaseModel):
-    user_id: str
-    title: str
-    message: str
-    notification_type: NotificationType
-    reference_id: Optional[str] = None  # ID of related document
-    send_email: bool = False
-
-
-class NotificationResponse(BaseModel):
-    id: str
-    user_id: str
-    title: str
-    message: str
-    notification_type: str
-    is_read: bool
-    created_at: str
-    reference_id: Optional[str] = None
+    user = relationship("User", back_populates="notifications")

@@ -1,130 +1,44 @@
-import React, { useEffect, useState } from 'react';
-import Layout from '../../components/common/Layout';
-import LoadingSpinner from '../../components/common/LoadingSpinner';
-import { timetableService } from '../../services';
-import { useAuth } from '../../context/AuthContext';
+import React, { useEffect, useState } from 'react'
+import { useAuth } from '../../context/AuthContext'
+import { timetableAPI } from '../../services/api'
 
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-const Timetable = () => {
-  const { user } = useAuth();
-  const [timetable, setTimetable] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [activeDay, setActiveDay] = useState(new Date().toLocaleDateString('en-US', { weekday: 'long' }));
+export default function Timetable() {
+  const { user } = useAuth()
+  const [entries, setEntries] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    timetableService.getMine()
-      .then(({ data }) => setTimetable(data))
-      .finally(() => setLoading(false));
-  }, []);
+    timetableAPI.get({ class_name: user.class_name }).then(r => { setEntries(r.data.timetable || []); setLoading(false) }).catch(() => setLoading(false))
+  }, [user.class_name])
 
-  const daySlots = timetable?.slots?.filter(s => s.day === activeDay) || [];
+  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-600 border-t-transparent" /></div>
 
   return (
-    <Layout title="Timetable">
-      <div className="space-y-6">
-        {loading ? <LoadingSpinner className="py-12" /> : !timetable ? (
-          <div className="card text-center py-12">
-            <p className="text-gray-400">No timetable available for your class yet</p>
-          </div>
-        ) : (
-          <>
-            {/* Day selector */}
-            <div className="flex gap-2 overflow-x-auto pb-2">
-              {DAYS.map(day => (
-                <button
-                  key={day}
-                  onClick={() => setActiveDay(day)}
-                  className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                    activeDay === day
-                      ? 'bg-primary-600 text-white shadow-sm'
-                      : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border hover:bg-gray-50'
-                  } ${day === new Date().toLocaleDateString('en-US', { weekday: 'long' }) && activeDay !== day ? 'border-primary-300' : ''}`}
-                >
-                  {day.slice(0, 3)}
-                  {day === new Date().toLocaleDateString('en-US', { weekday: 'long' }) && (
-                    <span className="ml-1 text-xs">•</span>
-                  )}
-                </button>
-              ))}
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Timetable</h1>
+      <div className="space-y-4">
+        {DAYS.map(day => {
+          const dayEntries = entries.filter(e => e.day_of_week === day)
+          if (!dayEntries.length) return null
+          return (
+            <div key={day} className="card">
+              <h3 className="font-semibold text-primary-600 dark:text-primary-400 mb-3">{day}</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                {dayEntries.sort((a, b) => a.start_time.localeCompare(b.start_time)).map(e => (
+                  <div key={e.id} className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
+                    <p className="font-medium text-sm">Subject {e.subject_id}</p>
+                    <p className="text-xs text-gray-500">{e.start_time} – {e.end_time}</p>
+                    {e.room && <p className="text-xs text-gray-400">Room: {e.room}</p>}
+                  </div>
+                ))}
+              </div>
             </div>
-
-            {/* Time slots */}
-            <div className="card">
-              <h3 className="section-title">{activeDay}</h3>
-              {daySlots.length === 0 ? (
-                <div className="py-12 text-center text-gray-400">No classes scheduled for {activeDay}</div>
-              ) : (
-                <div className="space-y-3">
-                  {daySlots
-                    .sort((a, b) => a.start_time?.localeCompare(b.start_time))
-                    .map((slot, i) => (
-                      <div key={i} className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
-                        <div className="text-center min-w-[80px]">
-                          <p className="text-sm font-bold text-primary-600">{slot.start_time}</p>
-                          <p className="text-xs text-gray-400">to</p>
-                          <p className="text-sm font-bold text-gray-500">{slot.end_time}</p>
-                        </div>
-                        <div className="w-0.5 h-12 bg-primary-200 dark:bg-primary-700" />
-                        <div className="flex-1">
-                          <p className="font-semibold text-gray-900 dark:text-white">{slot.subject}</p>
-                          <p className="text-sm text-gray-500 mt-0.5">👩‍🏫 {slot.teacher_name}</p>
-                        </div>
-                        {slot.room && (
-                          <div className="text-right">
-                            <span className="badge badge-blue">📍 {slot.room}</span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                </div>
-              )}
-            </div>
-
-            {/* Full weekly view */}
-            <div className="card overflow-x-auto">
-              <h3 className="section-title">Weekly Overview</h3>
-              <table className="w-full text-xs">
-                <thead>
-                  <tr>
-                    <th className="py-2 px-3 text-left text-gray-500 font-semibold">Time</th>
-                    {DAYS.slice(0, 6).map(d => (
-                      <th key={d} className={`py-2 px-3 font-semibold ${d === activeDay ? 'text-primary-600' : 'text-gray-500'}`}>
-                        {d.slice(0, 3)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {(() => {
-                    const times = [...new Set(timetable.slots?.map(s => s.start_time))].sort();
-                    return times.map(time => (
-                      <tr key={time} className="border-t border-gray-100 dark:border-gray-700">
-                        <td className="py-2 px-3 text-gray-500 font-medium">{time}</td>
-                        {DAYS.slice(0, 6).map(d => {
-                          const slot = timetable.slots?.find(s => s.day === d && s.start_time === time);
-                          return (
-                            <td key={d} className={`py-2 px-3 ${slot ? 'bg-primary-50 dark:bg-primary-900/20' : ''}`}>
-                              {slot ? (
-                                <div>
-                                  <p className="font-medium text-primary-700 dark:text-primary-300">{slot.subject}</p>
-                                  <p className="text-gray-400">{slot.room || ''}</p>
-                                </div>
-                              ) : <span className="text-gray-300">-</span>}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ));
-                  })()}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
+          )
+        })}
+        {!entries.length && <div className="card text-center text-gray-500">No timetable entries found.</div>}
       </div>
-    </Layout>
-  );
-};
-
-export default Timetable;
+    </div>
+  )
+}

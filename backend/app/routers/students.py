@@ -1,114 +1,140 @@
-from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File
-from app.utils.auth_deps import get_current_user, require_admin, require_teacher_or_admin
-from app.utils.helpers import serialize_doc, serialize_list, paginate
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.orm import Session
+from typing import Optional
+
 from app.database import get_db
-from app.services.email_service import send_email
-from bson import ObjectId
-from datetime import datetime
-import os, aiofiles
+from app.models.user import User, UserRole
+from app.models.student import StudentProfile
+from app.models.attendance import Attendance
+from app.models.exam import Mark, Exam
+from app.models.assignment import Assignment, Submission
+from app.models.fee import Fee
+from app.utils.auth_deps import get_current_user, require_teacher_or_admin, require_student
 
 router = APIRouter(prefix="/api/students", tags=["Students"])
 
 
-@router.get("/")
-async def get_students(
-    page: int = 1,
-    limit: int = 20,
-    department: str = None,
-    class_name: str = None,
-    search: str = None,
-    current_user=Depends(require_teacher_or_admin)
+@router.get("")
+def list_students(
+    search: Optional[str] = None,
+    class_name: Optional[str] = None,
+    department: Optional[str] = None,
+    skip: int = 0, limit: int = 50,
+    _=Depends(require_teacher_or_admin),
+    db: Session = Depends(get_db),
 ):
-    db = get_db()
-    query = {"role": "student"}
-    if department:
-        query["department"] = department
-    if class_name:
-        query["class_name"] = class_name
+    q = (db.query(User, StudentProfile)
+         .join(StudentProfile, User.id == StudentProfile.user_id)
+         .filter(User.role == UserRole.student, User.is_active == True))
     if search:
-        query["$or"] = [
-            {"full_name": {"$regex": search, "$options": "i"}},
-            {"roll_number": {"$regex": search, "$options": "i"}},
-            {"email": {"$regex": search, "$options": "i"}}
-        ]
-    skip, lim = paginate(page, limit)
-    students = await db.users.find(query, {"password": 0}).skip(skip).limit(lim).to_list(lim)
-    total = await db.users.count_documents(query)
-    return {"students": serialize_list(students), "total": total, "page": page, "limit": lim}
-
-
-@router.get("/:id/profile")
-async def get_student_profile(student_id: str, current_user=Depends(get_current_user)):
-    db = get_db()
-    student = await db.users.find_one({"_id": ObjectId(student_id), "role": "student"}, {"password": 0})
-    if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
-    return serialize_doc(student)
+        q = q.filter(
+            User.full_name.ilike(f"%{search}%") | User.email.ilike(f"%{search}%") |
+            StudentProfile.roll_number.ilike(f"%{search}%"))
+    if class_name:
+        q = q.filter(StudentProfile.class_name == class_name)
+    if department:
+        q = q.filter(StudentProfile.department == department)
+    total = q.count()
+    results = q.offset(skip).limit(limit).all()
+    return {"total": total, "students": [
+        {"id": u.id, "email": u.email, "full_name": u.full_name,
+         "phone": u.phone, "profile_photo": u.profile_photo,
+         "roll_number": sp.roll_number, "department": sp.department,
+         "class_name": sp.class_name, "section": sp.section,
+         "semester": sp.semester, "year": sp.year, "created_at": u.created_at}
+        for u, sp in results]}
 
 
 @router.get("/profile")
-async def get_my_profile(current_user=Depends(get_current_user)):
-    db = get_db()
-    user = await db.users.find_one({"_id": current_user["_id"]}, {"password": 0})
-    return serialize_doc(user)
+def my_profile(current_user: User = Depends(require_student), db: Session = Depends(get_db)):
+    sp = db.query(StudentProfile).filter(StudentProfile.user_id == current_user.id).first()
+    return {
+        "id": current_user.id, "email": current_user.email, "full_name": current_user.full_name,
+        "phone": current_user.phone, "profile_photo": current_user.profile_photo,
+        "roll_number": sp.roll_number if sp else None,
+        "department": sp.department if sp else None,
+        "class_name": sp.class_name if sp else None,
+        "section": sp.section if sp else None,
+        "semester": sp.semester if sp else None,
+        "year": sp.year if sp else None,
+    }
 
 
-@router.put("/profile")
-async def update_profile(data: dict, current_user=Depends(get_current_user)):
-    db = get_db()
-    allowed = ["full_name", "phone", "address", "date_of_birth"]
-    update_data = {k: v for k, v in data.items() if k in allowed}
-    update_data["updated_at"] = datetime.utcnow()
-    await db.users.update_one({"_id": current_user["_id"]}, {"$set": update_data})
-    return {"message": "Profile updated successfully"}
+@router.get("/attendance")
+def my_attendance(current_user: User = Depends(require_student), db: Session = Depends(get_db)):
+    records = db.query(Attendance).filter(Attendance.student_id == current_user.id).all()
+    total = len(records)
+    present = sum(1 for r in records if r.status.value in ("present", "late"))
+    pct = round((present / total) * 100, 2) if total > 0 else 0
+    return {
+        "total_classes": total, "present": present, "absent": total - present,
+        "percentage": pct,
+        "records": [{"id": r.id, "date": r.date, "status": r.status.value,
+                     "subject_id": r.subject_id} for r in records],
+    }
 
 
-@router.post("/profile/photo")
-async def upload_profile_photo(
-    file: UploadFile = File(...),
-    current_user=Depends(get_current_user)
-):
-    from app.config import settings
-    allowed_types = ["image/jpeg", "image/png", "image/webp"]
-    if file.content_type not in allowed_types:
-        raise HTTPException(status_code=400, detail="Only JPEG/PNG/WebP images allowed")
-    if file.size and file.size > settings.max_file_size:
-        raise HTTPException(status_code=400, detail="File too large")
+@router.get("/marks")
+def my_marks(current_user: User = Depends(require_student), db: Session = Depends(get_db)):
+    marks = (db.query(Mark, Exam).join(Exam, Mark.exam_id == Exam.id)
+             .filter(Mark.student_id == current_user.id).all())
+    return {"marks": [
+        {"id": m.id, "exam_title": e.title, "exam_type": e.exam_type.value,
+         "subject_id": e.subject_id, "marks_obtained": m.marks_obtained,
+         "total_marks": e.total_marks,
+         "percentage": round((m.marks_obtained / e.total_marks) * 100, 2),
+         "grade": m.grade, "remarks": m.remarks, "exam_date": e.exam_date}
+        for m, e in marks]}
 
-    upload_dir = os.path.join(settings.upload_dir, "photos")
-    os.makedirs(upload_dir, exist_ok=True)
-    filename = f"{current_user['_id']}_{datetime.utcnow().timestamp()}{os.path.splitext(file.filename)[1]}"
-    filepath = os.path.join(upload_dir, filename)
 
-    async with aiofiles.open(filepath, "wb") as f:
-        content = await file.read()
-        await f.write(content)
+@router.get("/assignments")
+def my_assignments(current_user: User = Depends(require_student), db: Session = Depends(get_db)):
+    assignments = db.query(Assignment).filter(Assignment.is_active == True).all()
+    result = []
+    for a in assignments:
+        sub = db.query(Submission).filter(
+            Submission.assignment_id == a.id, Submission.student_id == current_user.id).first()
+        result.append({
+            "id": a.id, "title": a.title, "description": a.description,
+            "deadline": a.deadline, "subject_id": a.subject_id, "max_marks": a.max_marks,
+            "submitted": sub is not None,
+            "submission": {"id": sub.id, "status": sub.status.value,
+                           "marks_obtained": sub.marks_obtained, "grade": sub.grade,
+                           "submitted_at": sub.submitted_at} if sub else None,
+        })
+    return {"assignments": result}
 
-    photo_url = f"/uploads/photos/{filename}"
-    await get_db().users.update_one(
-        {"_id": current_user["_id"]}, {"$set": {"profile_photo": photo_url}}
-    )
-    return {"photo_url": photo_url}
+
+@router.get("/fees")
+def my_fees(current_user: User = Depends(require_student), db: Session = Depends(get_db)):
+    fees = db.query(Fee).filter(Fee.student_id == current_user.id).all()
+    total = sum(f.amount for f in fees)
+    paid = sum(f.amount for f in fees if f.status.value == "paid")
+    return {
+        "total_amount": total, "paid_amount": paid, "pending_amount": total - paid,
+        "fees": [{"id": f.id, "amount": f.amount, "fee_type": f.fee_type,
+                  "description": f.description, "due_date": f.due_date,
+                  "payment_date": f.payment_date, "status": f.status.value,
+                  "transaction_id": f.transaction_id} for f in fees],
+    }
+
+
+@router.get("/{student_id}")
+def get_student(student_id: int, _=Depends(require_teacher_or_admin), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == student_id, User.role == UserRole.student).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Student not found")
+    sp = db.query(StudentProfile).filter(StudentProfile.user_id == student_id).first()
+    return {"id": user.id, "email": user.email, "full_name": user.full_name,
+            "phone": user.phone, "roll_number": sp.roll_number if sp else None,
+            "department": sp.department if sp else None, "class_name": sp.class_name if sp else None}
 
 
 @router.delete("/{student_id}")
-async def delete_student(student_id: str, current_user=Depends(require_admin)):
-    db = get_db()
-    result = await db.users.update_one(
-        {"_id": ObjectId(student_id), "role": "student"},
-        {"$set": {"is_active": False, "deleted_at": datetime.utcnow()}}
-    )
-    if result.modified_count == 0:
+def delete_student(student_id: int, _=Depends(require_teacher_or_admin), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == student_id, User.role == UserRole.student).first()
+    if not user:
         raise HTTPException(status_code=404, detail="Student not found")
-    return {"message": "Student deactivated successfully"}
-
-
-@router.get("/stats/overview")
-async def get_student_stats(current_user=Depends(require_admin)):
-    db = get_db()
-    total = await db.users.count_documents({"role": "student", "is_active": True})
-    by_dept = await db.users.aggregate([
-        {"$match": {"role": "student", "is_active": True}},
-        {"$group": {"_id": "$department", "count": {"$sum": 1}}}
-    ]).to_list(100)
-    return {"total_students": total, "by_department": by_dept}
+    user.is_active = False
+    db.commit()
+    return {"message": "Student deactivated"}

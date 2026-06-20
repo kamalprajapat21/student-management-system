@@ -1,59 +1,40 @@
-from fastapi import APIRouter, Depends, Query
-from app.utils.auth_deps import get_current_user
-from app.utils.helpers import serialize_list
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
 from app.database import get_db
-from bson import ObjectId
-from datetime import datetime
+from app.models.notification import Notification
+from app.models.user import User
+from app.utils.auth_deps import get_current_user
 
 router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
 
 
-@router.get("/")
-async def get_notifications(
-    page: int = 1,
-    limit: int = 20,
-    unread_only: bool = False,
-    current_user=Depends(get_current_user)
-):
-    db = get_db()
-    query = {"user_id": str(current_user["_id"])}
-    if unread_only:
-        query["is_read"] = False
-    skip = (page - 1) * limit
-    notifications = await db.notifications.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
-    total = await db.notifications.count_documents(query)
-    unread_count = await db.notifications.count_documents({"user_id": str(current_user["_id"]), "is_read": False})
-    return {
-        "notifications": serialize_list(notifications),
-        "total": total,
-        "unread_count": unread_count
-    }
+@router.get("")
+def my_notifications(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    notifs = (db.query(Notification)
+              .filter(Notification.user_id == current_user.id)
+              .order_by(Notification.created_at.desc()).limit(50).all())
+    unread = sum(1 for n in notifs if not n.is_read)
+    return {"unread": unread, "notifications": [
+        {"id": n.id, "title": n.title, "message": n.message,
+         "type": n.notification_type, "is_read": n.is_read, "created_at": n.created_at}
+        for n in notifs]}
 
 
-@router.post("/{notification_id}/read")
-async def mark_as_read(notification_id: str, current_user=Depends(get_current_user)):
-    db = get_db()
-    await db.notifications.update_one(
-        {"_id": ObjectId(notification_id), "user_id": str(current_user["_id"])},
-        {"$set": {"is_read": True, "read_at": datetime.utcnow()}}
-    )
+@router.put("/{notif_id}/read")
+def mark_read(notif_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    n = db.query(Notification).filter(
+        Notification.id == notif_id, Notification.user_id == current_user.id).first()
+    if n:
+        n.is_read = True
+        db.commit()
     return {"message": "Marked as read"}
 
 
-@router.post("/read-all")
-async def mark_all_read(current_user=Depends(get_current_user)):
-    db = get_db()
-    await db.notifications.update_many(
-        {"user_id": str(current_user["_id"]), "is_read": False},
-        {"$set": {"is_read": True, "read_at": datetime.utcnow()}}
-    )
+@router.put("/read-all")
+def mark_all_read(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db.query(Notification).filter(
+        Notification.user_id == current_user.id, Notification.is_read == False
+    ).update({"is_read": True})
+    db.commit()
     return {"message": "All notifications marked as read"}
-
-
-@router.get("/unread-count")
-async def get_unread_count(current_user=Depends(get_current_user)):
-    db = get_db()
-    count = await db.notifications.count_documents(
-        {"user_id": str(current_user["_id"]), "is_read": False}
-    )
-    return {"unread_count": count}

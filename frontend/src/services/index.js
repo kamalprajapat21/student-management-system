@@ -1,62 +1,22 @@
-import api from './api';
+// Re-export all API services from api.js for backward compatibility
+export {
+  authAPI,
+  studentAPI,
+  teacherAPI,
+  attendanceAPI,
+  assignmentAPI,
+  examAPI,
+  feeAPI,
+  noticeAPI,
+  notificationAPI,
+  analyticsAPI,
+  aiAPI,
+  leaveAPI,
+  timetableAPI,
+  parentAPI,
+} from './api'
 
-export const authService = {
-  login: (email, password) => api.post('/api/auth/login', { email, password }),
-  registerStudent: (data) => api.post('/api/auth/register/student', data),
-  registerTeacher: (data) => api.post('/api/auth/register/teacher', data),
-  registerParent: (data) => api.post('/api/auth/register/parent', data),
-  forgotPassword: (email) => api.post('/api/auth/forgot-password', { email }),
-  resetPassword: (token, new_password) => api.post('/api/auth/reset-password', { token, new_password }),
-  changePassword: (current_password, new_password) =>
-    api.post('/api/auth/change-password', { current_password, new_password }),
-  getMe: () => api.get('/api/auth/me'),
-};
-
-export const studentService = {
-  getAll: (params) => api.get('/api/students/', { params }),
-  getProfile: () => api.get('/api/students/profile'),
-  updateProfile: (data) => api.put('/api/students/profile', data),
-  uploadPhoto: (file) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    return api.post('/api/students/profile/photo', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-  },
-  getStats: () => api.get('/api/students/stats/overview'),
-};
-
-export const attendanceService = {
-  mark: (data) => api.post('/api/attendance/mark', data),
-  markBulk: (data) => api.post('/api/attendance/mark/bulk', data),
-  getStudentAttendance: (studentId, params) =>
-    api.get(`/api/attendance/student/${studentId}`, { params }),
-  getClassAttendance: (classId, params) =>
-    api.get(`/api/attendance/class/${classId}`, { params }),
-  getSubjectWise: (studentId) =>
-    api.get(`/api/attendance/subject-wise/${studentId}`),
-};
-
-export const assignmentService = {
-  create: (data) => api.post('/api/assignments/', data),
-  getAll: (params) => api.get('/api/assignments/', { params }),
-  getById: (id) => api.get(`/api/assignments/${id}`),
-  update: (id, data) => api.put(`/api/assignments/${id}`, data),
-  submit: (id, formData) => api.post(`/api/assignments/submit/${id}`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }),
-  getSubmissions: (id) => api.get(`/api/assignments/${id}/submissions`),
-  grade: (data) => api.post('/api/assignments/grade', data),
-};
-
-export const feeService = {
-  create: (data) => api.post('/api/fees/', data),
-  getStudentFees: (studentId) => api.get(`/api/fees/student/${studentId}`),
-  pay: (data) => api.post('/api/fees/pay', data),
-  downloadReceipt: (feeId) =>
-    api.get(`/api/fees/${feeId}/receipt`, { responseType: 'blob' }),
-  getOverdue: () => api.get('/api/fees/overdue/all'),
-};
+export { default } from './api'
 
 export const leaveService = {
   apply: (data) => api.post('/api/leaves/apply', data),

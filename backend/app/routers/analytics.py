@@ -1,201 +1,62 @@
-from fastapi import APIRouter, Depends, Response
-from app.utils.auth_deps import get_current_user, require_admin, require_teacher_or_admin
-from app.utils.helpers import serialize_list
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+
 from app.database import get_db
-from bson import ObjectId
-from datetime import datetime, timedelta
-import io, json
+from app.models.user import User, UserRole
+from app.models.attendance import Attendance
+from app.models.exam import Mark
+from app.models.fee import Fee
+from app.models.assignment import Assignment, Submission
+from app.utils.auth_deps import require_admin, require_teacher_or_admin
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 
 
-@router.get("/student/{student_id}")
-async def student_analytics(student_id: str, current_user=Depends(get_current_user)):
-    db = get_db()
-    # Attendance summary
-    records = await db.attendance.find({"student_id": student_id}).to_list(1000)
-    total = len(records)
-    present = sum(1 for r in records if r["status"] in ["present", "late"])
-    attendance_pct = round((present / total * 100), 2) if total else 0
-
-    # Subject-wise attendance
-    subj_pipeline = [
-        {"$match": {"student_id": student_id}},
-        {"$group": {
-            "_id": "$subject",
-            "total": {"$sum": 1},
-            "present": {"$sum": {"$cond": [{"$in": ["$status", ["present", "late"]]}, 1, 0]}}
-        }}
-    ]
-    subj_attendance = await db.attendance.aggregate(subj_pipeline).to_list(20)
-
-    # Marks summary
-    marks = await db.marks.find({"student_id": student_id}).to_list(100)
-    marks_by_subject = {}
+@router.get("/dashboard")
+def admin_dashboard(_=Depends(require_admin), db: Session = Depends(get_db)):
+    total_students = db.query(User).filter(User.role == UserRole.student, User.is_active == True).count()
+    total_teachers = db.query(User).filter(User.role == UserRole.teacher, User.is_active == True).count()
+    total_assignments = db.query(Assignment).filter(Assignment.is_active == True).count()
+    all_att = db.query(Attendance).all()
+    present_count = sum(1 for a in all_att if a.status.value == "present")
+    att_pct = round((present_count / len(all_att)) * 100, 2) if all_att else 0
+    all_fees = db.query(Fee).all()
+    total_fee = sum(f.amount for f in all_fees)
+    paid_fee = sum(f.amount for f in all_fees if f.status.value == "paid")
+    marks = db.query(Mark).all()
+    grade_dist = {}
     for m in marks:
-        exam = await db.exams.find_one({"_id": ObjectId(m["exam_id"])})
-        if exam:
-            subj = exam["subject"]
-            if subj not in marks_by_subject:
-                marks_by_subject[subj] = {"obtained": 0, "total": 0, "count": 0}
-            marks_by_subject[subj]["obtained"] += m.get("marks_obtained", 0)
-            marks_by_subject[subj]["total"] += exam.get("total_marks", 100)
-            marks_by_subject[subj]["count"] += 1
-
-    # Assignment completion
-    assignments = await db.assignments.find(
-        {"class_id": current_user.get("class_name")}
-    ).to_list(100)
-    total_assignments = len(assignments)
-    submitted = 0
-    for a in assignments:
-        sub = await db.submissions.find_one({"assignment_id": str(a["_id"]), "student_id": student_id})
-        if sub:
-            submitted += 1
-
+        g = m.grade or "N/A"
+        grade_dist[g] = grade_dist.get(g, 0) + 1
     return {
-        "attendance": {
-            "total": total,
-            "present": present,
-            "percentage": attendance_pct,
-            "subject_wise": subj_attendance
-        },
-        "marks": {
-            "by_subject": marks_by_subject
-        },
-        "assignments": {
-            "total": total_assignments,
-            "submitted": submitted,
-            "completion_rate": round(submitted / total_assignments * 100, 2) if total_assignments else 0
-        }
+        "total_students": total_students, "total_teachers": total_teachers,
+        "total_assignments": total_assignments,
+        "attendance_percentage": att_pct,
+        "total_fee_amount": total_fee, "paid_fee_amount": paid_fee,
+        "pending_fee_amount": total_fee - paid_fee,
+        "grade_distribution": grade_dist,
     }
 
 
-@router.get("/teacher/class/{class_id}")
-async def teacher_class_analytics(class_id: str, current_user=Depends(require_teacher_or_admin)):
-    db = get_db()
-    students = await db.users.find(
-        {"class_name": class_id, "role": "student", "is_active": True}, {"password": 0}
-    ).to_list(200)
+@router.get("/attendance-trend")
+def attendance_trend(_=Depends(require_teacher_or_admin), db: Session = Depends(get_db)):
+    results = (db.query(Attendance.date, func.count(Attendance.id).label("total"))
+               .group_by(Attendance.date).order_by(Attendance.date.desc()).limit(30).all())
+    return {"trend": [{"date": str(r.date), "total": r.total} for r in results]}
 
-    student_analytics = []
-    for student in students:
-        sid = str(student["_id"])
-        records = await db.attendance.find({"student_id": sid}).to_list(500)
-        total = len(records)
-        present = sum(1 for r in records if r["status"] in ["present", "late"])
-        pct = round(present / total * 100, 2) if total else 0
 
-        marks = await db.marks.find({"student_id": sid}).to_list(50)
-        avg_marks = 0
-        if marks:
-            total_pct = sum(
-                (m["marks_obtained"] / 100 * 100) for m in marks if m.get("marks_obtained") is not None
-            )
-            avg_marks = round(total_pct / len(marks), 2)
-
-        student_analytics.append({
-            "student_id": sid,
-            "name": student["full_name"],
-            "roll_number": student.get("roll_number"),
-            "attendance_percentage": pct,
-            "average_marks": avg_marks,
-            "risk": "high" if pct < 60 or avg_marks < 40 else "medium" if pct < 75 or avg_marks < 60 else "low"
-        })
-
-    top_performers = sorted(student_analytics, key=lambda x: x["average_marks"], reverse=True)[:5]
-    weak_students = [s for s in student_analytics if s["risk"] == "high"]
-
+@router.get("/student/{student_id}")
+def student_analytics(student_id: int, _=Depends(require_teacher_or_admin), db: Session = Depends(get_db)):
+    records = db.query(Attendance).filter(Attendance.student_id == student_id).all()
+    total = len(records)
+    present = sum(1 for r in records if r.status.value in ("present", "late"))
+    att_pct = round((present / total) * 100, 2) if total > 0 else 0
+    marks = db.query(Mark).filter(Mark.student_id == student_id).all()
+    avg_marks = round(sum(m.marks_obtained for m in marks) / len(marks), 2) if marks else 0
+    subs = db.query(Submission).filter(Submission.student_id == student_id).all()
     return {
-        "total_students": len(students),
-        "class_analytics": student_analytics,
-        "top_performers": top_performers,
-        "weak_students": weak_students,
-        "avg_attendance": round(sum(s["attendance_percentage"] for s in student_analytics) / len(student_analytics), 2) if student_analytics else 0
+        "attendance_percentage": att_pct, "total_classes": total, "present": present,
+        "average_marks": avg_marks, "total_submissions": len(subs),
+        "graded_submissions": sum(1 for s in subs if s.status.value == "graded"),
     }
-
-
-@router.get("/admin/overview")
-async def admin_overview(current_user=Depends(require_admin)):
-    db = get_db()
-    total_students = await db.users.count_documents({"role": "student", "is_active": True})
-    total_teachers = await db.users.count_documents({"role": "teacher", "is_active": True})
-    total_parents = await db.users.count_documents({"role": "parent", "is_active": True})
-
-    # Attendance this week
-    week_start = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
-    total_records = await db.attendance.count_documents({"date": {"$gte": week_start}})
-    present_records = await db.attendance.count_documents({
-        "date": {"$gte": week_start},
-        "status": {"$in": ["present", "late"]}
-    })
-
-    # Fee stats
-    fee_pipeline = [
-        {"$group": {
-            "_id": None,
-            "total_collected": {"$sum": "$amount_paid"},
-            "total_due": {"$sum": "$due_amount"}
-        }}
-    ]
-    fee_stats = await db.fees.aggregate(fee_pipeline).to_list(1)
-
-    # Students by department
-    dept_pipeline = [
-        {"$match": {"role": "student", "is_active": True}},
-        {"$group": {"_id": "$department", "count": {"$sum": 1}}}
-    ]
-    by_dept = await db.users.aggregate(dept_pipeline).to_list(20)
-
-    return {
-        "total_students": total_students,
-        "total_teachers": total_teachers,
-        "total_parents": total_parents,
-        "weekly_attendance": {
-            "total": total_records,
-            "present": present_records,
-            "percentage": round(present_records / total_records * 100, 2) if total_records else 0
-        },
-        "fee_stats": fee_stats[0] if fee_stats else {"total_collected": 0, "total_due": 0},
-        "students_by_department": by_dept
-    }
-
-
-@router.get("/admin/export/students")
-async def export_students_excel(current_user=Depends(require_admin)):
-    db = get_db()
-    import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment
-
-    students = await db.users.find({"role": "student", "is_active": True}, {"password": 0}).to_list(1000)
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Students"
-
-    headers = ["Roll Number", "Full Name", "Email", "Department", "Class", "Semester", "Phone", "Joined"]
-    for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=header)
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-        cell.font = Font(bold=True, color="FFFFFF")
-
-    for row, student in enumerate(students, 2):
-        ws.cell(row=row, column=1, value=student.get("roll_number", ""))
-        ws.cell(row=row, column=2, value=student.get("full_name", ""))
-        ws.cell(row=row, column=3, value=student.get("email", ""))
-        ws.cell(row=row, column=4, value=student.get("department", ""))
-        ws.cell(row=row, column=5, value=student.get("class_name", ""))
-        ws.cell(row=row, column=6, value=student.get("semester", ""))
-        ws.cell(row=row, column=7, value=student.get("phone", ""))
-        ws.cell(row=row, column=8, value=str(student.get("created_at", "")))
-
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-
-    return Response(
-        content=output.read(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=students.xlsx"}
-    )

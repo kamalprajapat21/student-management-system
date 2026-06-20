@@ -1,74 +1,55 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import api from '../services/api';
-import toast from 'react-hot-toast';
+import React, { createContext, useContext, useState, useEffect } from 'react'
+import { authAPI } from '../services/api'
 
-const AuthContext = createContext(null);
+const AuthContext = createContext(null)
 
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (token) {
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      fetchCurrentUser();
-    } else {
-      setLoading(false);
+    const token = localStorage.getItem('access_token')
+    const savedUser = localStorage.getItem('user')
+    if (token && savedUser) {
+      try {
+        setUser(JSON.parse(savedUser))
+      } catch {
+        localStorage.clear()
+      }
     }
-  }, [token]);
+    setLoading(false)
+  }, [])
 
-  const fetchCurrentUser = async () => {
-    try {
-      const { data } = await api.get('/api/auth/me');
-      setUser(data);
-    } catch {
-      logout();
-    } finally {
-      setLoading(false);
-    }
-  };
+  const login = async (email, password) => {
+    const res = await authAPI.login({ email, password })
+    const { access_token, user: userData } = res.data
+    localStorage.setItem('access_token', access_token)
+    localStorage.setItem('user', JSON.stringify(userData))
+    setUser(userData)
+    return userData
+  }
 
-  const login = useCallback(async (email, password) => {
-    const { data } = await api.post('/api/auth/login', { email, password });
-    const { access_token, user: userData } = data;
-    localStorage.setItem('token', access_token);
-    api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
-    setToken(access_token);
-    setUser(userData);
-    return userData;
-  }, []);
+  const logout = () => {
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('user')
+    setUser(null)
+  }
 
-  const logout = useCallback(() => {
-    localStorage.removeItem('token');
-    delete api.defaults.headers.common['Authorization'];
-    setToken(null);
-    setUser(null);
-  }, []);
+  const updateUser = (updates) => {
+    const updated = { ...user, ...updates }
+    localStorage.setItem('user', JSON.stringify(updated))
+    setUser(updated)
+  }
 
-  const updateUser = useCallback((updatedData) => {
-    setUser(prev => ({ ...prev, ...updatedData }));
-  }, []);
+  return (
+    <AuthContext.Provider value={{ user, loading, login, logout, updateUser }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
 
-  const value = {
-    user,
-    token,
-    loading,
-    login,
-    logout,
-    updateUser,
-    isAuthenticated: !!user,
-    isStudent: user?.role === 'student',
-    isTeacher: user?.role === 'teacher',
-    isParent: user?.role === 'parent',
-    isAdmin: user?.role === 'admin',
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-};
-
-export const useAuth = () => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
-};
+export function useAuth() {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
+  return ctx
+}

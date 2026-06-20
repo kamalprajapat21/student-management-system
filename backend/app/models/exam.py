@@ -1,65 +1,46 @@
-from pydantic import BaseModel
-from typing import Optional, List
-from enum import Enum
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Enum as SAEnum, Text
+from sqlalchemy.orm import relationship
+from datetime import datetime
+import enum
+from app.database import Base
 
 
-class ExamType(str, Enum):
+class ExamType(str, enum.Enum):
     midterm = "midterm"
     final = "final"
-    practical = "practical"
     quiz = "quiz"
-    internal = "internal"
+    practical = "practical"
 
 
-class ExamCreate(BaseModel):
-    title: str
-    exam_type: ExamType
-    subject: str
-    class_id: str
-    department: str
-    exam_date: str
-    start_time: str
-    end_time: str
-    total_marks: float
-    venue: Optional[str] = None
-    instructions: Optional[str] = None
+class Exam(Base):
+    __tablename__ = "exams"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    subject_id = Column(Integer, ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True)
+    exam_date = Column(DateTime, nullable=False)
+    exam_type = Column(SAEnum(ExamType), nullable=False, default=ExamType.midterm)
+    total_marks = Column(Float, default=100.0)
+    passing_marks = Column(Float, default=40.0)
+    duration_minutes = Column(Integer, default=180)
+    class_name = Column(String(100), nullable=True)
+    section = Column(String(20), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    subject = relationship("Subject", back_populates="exams")
+    marks = relationship("Mark", back_populates="exam", cascade="all, delete-orphan")
 
 
-class MarksUpload(BaseModel):
-    exam_id: str
-    student_id: str
-    marks_obtained: float
-    remarks: Optional[str] = None
+class Mark(Base):
+    __tablename__ = "marks"
 
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    exam_id = Column(Integer, ForeignKey("exams.id", ondelete="CASCADE"), nullable=False)
+    marks_obtained = Column(Float, nullable=False)
+    grade = Column(String(5), nullable=True)
+    remarks = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-class BulkMarksUpload(BaseModel):
-    exam_id: str
-    marks: List[dict]  # [{student_id, marks_obtained, remarks}]
-
-
-class PracticalCreate(BaseModel):
-    title: str
-    subject: str
-    class_id: str
-    department: str
-    practical_date: str
-    start_time: str
-    end_time: str
-    total_marks: float
-    venue: Optional[str] = None
-    instructions: Optional[str] = None
-    batch: Optional[str] = None
-
-
-class ExamResponse(BaseModel):
-    id: str
-    title: str
-    exam_type: str
-    subject: str
-    class_id: str
-    exam_date: str
-    start_time: str
-    end_time: str
-    total_marks: float
-    venue: Optional[str]
-    created_by: str
+    student = relationship("User", foreign_keys=[student_id], backref="marks")
+    exam = relationship("Exam", back_populates="marks")

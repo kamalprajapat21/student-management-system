@@ -1,30 +1,20 @@
-from pydantic import BaseModel
-from typing import Optional, List
+from sqlalchemy import Column, Integer, String, Time, ForeignKey
+from sqlalchemy.orm import relationship
+from app.database import Base
 
 
-class TimetableSlot(BaseModel):
-    day: str  # Monday, Tuesday, etc.
-    start_time: str
-    end_time: str
-    subject: str
-    teacher_id: str
-    teacher_name: str
-    room: Optional[str] = None
+class Timetable(Base):
+    __tablename__ = "timetable"
 
+    id = Column(Integer, primary_key=True, index=True)
+    class_name = Column(String(100), nullable=False, index=True)
+    section = Column(String(20), nullable=True)
+    subject_id = Column(Integer, ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True)
+    teacher_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    day_of_week = Column(String(15), nullable=False)
+    start_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=False)
+    room = Column(String(50), nullable=True)
 
-class TimetableCreate(BaseModel):
-    class_id: str
-    department: str
-    semester: int
-    academic_year: str
-    slots: List[TimetableSlot]
-
-
-class TimetableResponse(BaseModel):
-    id: str
-    class_id: str
-    department: str
-    semester: int
-    academic_year: str
-    slots: List[dict]
-    created_at: str
+    subject = relationship("Subject", back_populates="timetable_slots")
+    teacher = relationship("User", foreign_keys=[teacher_id], backref="timetable_slots")

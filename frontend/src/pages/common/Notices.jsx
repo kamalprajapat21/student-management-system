@@ -1,174 +1,90 @@
-import React, { useEffect, useState } from 'react';
-import Layout from '../../components/common/Layout';
-import LoadingSpinner from '../../components/common/LoadingSpinner';
-import Modal from '../../components/common/Modal';
-import { noticeService } from '../../services';
-import { useAuth } from '../../context/AuthContext';
-import { ExclamationTriangleIcon, PlusIcon } from '@heroicons/react/24/outline';
-import toast from 'react-hot-toast';
+import React, { useEffect, useState } from 'react'
+import { useAuth } from '../../context/AuthContext'
+import { noticeAPI } from '../../services/api'
+import toast from 'react-hot-toast'
+import Modal from '../../components/common/Modal'
+import { Plus, Bell } from 'lucide-react'
 
-const priorityConfig = {
-  urgent: { label: 'Urgent', class: 'badge-red', border: 'border-l-red-500' },
-  high: { label: 'High', class: 'badge-yellow', border: 'border-l-yellow-500' },
-  normal: { label: 'Normal', class: 'badge-blue', border: 'border-l-blue-400' },
-  low: { label: 'Low', class: 'bg-gray-100 text-gray-600', border: 'border-l-gray-300' },
-};
+export default function Notices() {
+  const { user } = useAuth()
+  const [notices, setNotices] = useState([])
+  const [modal, setModal] = useState(false)
+  const [form, setForm] = useState({ title: '', description: '', target_role: 'all' })
+  const [loading, setLoading] = useState(false)
 
-const Notices = () => {
-  const { user } = useAuth();
-  const [notices, setNotices] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({
-    title: '', content: '', priority: 'normal', target: 'all', target_class: ''
-  });
+  const load = () => noticeAPI.list().then(r => setNotices(r.data.notices || [])).catch(() => {})
+  useEffect(load, [])
 
-  useEffect(() => { fetchNotices(); }, []);
-
-  const fetchNotices = async () => {
-    setLoading(true);
+  const create = async () => {
+    if (!form.title || !form.description) return toast.error('Fill all fields')
+    setLoading(true)
     try {
-      const { data } = await noticeService.getAll({ limit: 30 });
-      setNotices(data.notices || []);
-      setTotal(data.total || 0);
-    } finally {
-      setLoading(false);
-    }
-  };
+      await noticeAPI.create(form)
+      toast.success('Notice published!')
+      setModal(false)
+      load()
+    } catch { toast.error('Failed') } finally { setLoading(false) }
+  }
 
-  const handleCreate = async (e) => {
-    e.preventDefault();
-    setCreating(true);
-    try {
-      await noticeService.create(form);
-      toast.success('Notice published!');
-      setShowCreate(false);
-      setForm({ title: '', content: '', priority: 'normal', target: 'all', target_class: '' });
-      fetchNotices();
-    } catch (err) {
-      toast.error('Failed to publish notice');
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const canCreate = ['teacher', 'admin'].includes(user?.role);
+  const del = async (id) => {
+    await noticeAPI.delete(id)
+    toast.success('Notice deleted')
+    load()
+  }
 
   return (
-    <Layout title="Notices">
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="page-title">Notice Board</h2>
-            <p className="text-gray-500 text-sm">{total} notices</p>
-          </div>
-          {canCreate && (
-            <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
-              <PlusIcon className="w-4 h-4" />
-              Post Notice
-            </button>
-          )}
-        </div>
-
-        {loading ? <LoadingSpinner className="py-12" /> : (
-          <div className="space-y-4">
-            {notices.length === 0 ? (
-              <div className="card text-center py-12 text-gray-400">No notices posted yet</div>
-            ) : (
-              notices.map((notice) => {
-                const config = priorityConfig[notice.priority] || priorityConfig.normal;
-                return (
-                  <div key={notice.id} className={`card border-l-4 ${config.border} hover:shadow-md transition-shadow`}>
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          {notice.priority === 'urgent' && (
-                            <ExclamationTriangleIcon className="w-4 h-4 text-red-500" />
-                          )}
-                          <span className={`badge ${config.class}`}>{config.label}</span>
-                          <span className="badge bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 capitalize">
-                            For: {notice.target?.replace('_', ' ')}
-                          </span>
-                        </div>
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{notice.title}</h3>
-                        <p className="text-gray-600 dark:text-gray-400 mt-2 leading-relaxed">{notice.content}</p>
-                      </div>
-                    </div>
-                    <div className="mt-3 flex items-center gap-4 text-xs text-gray-400">
-                      <span>By: {notice.created_by_name}</span>
-                      <span>•</span>
-                      <span>{notice.created_at?.slice(0, 10)}</span>
-                    </div>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Notices & Announcements</h1>
+        {(user?.role === 'teacher' || user?.role === 'admin') && (
+          <button onClick={() => setModal(true)} className="btn-primary flex items-center gap-2"><Plus className="h-4 w-4" /> Post Notice</button>
+        )}
+      </div>
+      <div className="space-y-4">
+        {notices.map(n => (
+          <div key={n.id} className="card border-l-4 border-l-primary-400">
+            <div className="flex items-start justify-between">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 bg-primary-100 dark:bg-primary-900 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Bell className="h-5 w-5 text-primary-600 dark:text-primary-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900 dark:text-white">{n.title}</h3>
+                  <p className="text-gray-600 dark:text-gray-300 text-sm mt-1">{n.description}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-xs text-gray-400">{new Date(n.created_at).toLocaleDateString()}</span>
+                    <span className="badge badge-blue">{n.target_role}</span>
                   </div>
-                );
-              })
-            )}
+                </div>
+              </div>
+              {(user?.role === 'teacher' || user?.role === 'admin') && (
+                <button onClick={() => del(n.id)} className="text-xs text-red-500 hover:text-red-700 ml-4">Delete</button>
+              )}
+            </div>
+          </div>
+        ))}
+        {!notices.length && (
+          <div className="card text-center text-gray-500 py-12">
+            <Bell className="h-12 w-12 mx-auto mb-3 opacity-30" />
+            <p>No notices posted yet.</p>
           </div>
         )}
       </div>
-
-      {/* Create Notice Modal */}
-      <Modal
-        isOpen={showCreate}
-        onClose={() => setShowCreate(false)}
-        title="Post a Notice"
-        size="lg"
-        footer={
-          <>
-            <button onClick={() => setShowCreate(false)} className="btn-secondary">Cancel</button>
-            <button onClick={handleCreate} disabled={creating} className="btn-primary">
-              {creating ? <LoadingSpinner size="sm" /> : 'Publish Notice'}
-            </button>
-          </>
-        }
-      >
-        <form className="space-y-4">
-          <div>
-            <label className="label">Title</label>
-            <input type="text" className="input" placeholder="Notice title" value={form.title}
-              onChange={(e) => setForm(p => ({ ...p, title: e.target.value }))} required />
+      <Modal open={modal} onClose={() => setModal(false)} title="Post a Notice">
+        <div className="space-y-4">
+          <div><label className="label">Title *</label><input className="input" value={form.title} onChange={e => setForm(p => ({...p, title: e.target.value}))} placeholder="Notice title" /></div>
+          <div><label className="label">Description *</label><textarea className="input h-32 resize-none" value={form.description} onChange={e => setForm(p => ({...p, description: e.target.value}))} placeholder="Notice content..." /></div>
+          <div><label className="label">Target Audience</label>
+            <select className="input" value={form.target_role} onChange={e => setForm(p => ({...p, target_role: e.target.value}))}>
+              {['all', 'student', 'teacher', 'parent'].map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
           </div>
-          <div>
-            <label className="label">Content</label>
-            <textarea className="input min-h-[120px] resize-y" placeholder="Write your notice..."
-              value={form.content} onChange={(e) => setForm(p => ({ ...p, content: e.target.value }))} required />
+          <div className="flex gap-3">
+            <button onClick={() => setModal(false)} className="btn-secondary flex-1">Cancel</button>
+            <button onClick={create} disabled={loading} className="btn-primary flex-1">{loading ? 'Posting...' : 'Post Notice'}</button>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="label">Priority</label>
-              <select className="input" value={form.priority}
-                onChange={(e) => setForm(p => ({ ...p, priority: e.target.value }))}>
-                <option value="low">Low</option>
-                <option value="normal">Normal</option>
-                <option value="high">High</option>
-                <option value="urgent">Urgent</option>
-              </select>
-            </div>
-            <div>
-              <label className="label">Target Audience</label>
-              <select className="input" value={form.target}
-                onChange={(e) => setForm(p => ({ ...p, target: e.target.value }))}>
-                <option value="all">All</option>
-                <option value="students">Students Only</option>
-                <option value="teachers">Teachers Only</option>
-                <option value="parents">Parents Only</option>
-                <option value="class_specific">Specific Class</option>
-              </select>
-            </div>
-          </div>
-          {form.target === 'class_specific' && (
-            <div>
-              <label className="label">Target Class</label>
-              <input type="text" className="input" placeholder="e.g. CSE-A" value={form.target_class}
-                onChange={(e) => setForm(p => ({ ...p, target_class: e.target.value }))} />
-            </div>
-          )}
-        </form>
+        </div>
       </Modal>
-    </Layout>
-  );
-};
-
-export default Notices;
+    </div>
+  )
+}
