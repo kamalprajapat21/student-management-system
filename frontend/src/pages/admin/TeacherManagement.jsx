@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { teacherAPI, authAPI } from '../../services/api'
 import toast from 'react-hot-toast'
 import Modal from '../../components/common/Modal'
-import { Plus, Trash2, Search } from 'lucide-react'
+import { Plus, Trash2, Search, Users, Briefcase } from 'lucide-react'
 
 export default function TeacherManagement() {
   const [teachers, setTeachers] = useState([])
@@ -21,6 +21,7 @@ export default function TeacherManagement() {
       await authAPI.registerTeacher({ ...form, experience_years: Number(form.experience_years) || 0 })
       toast.success('Teacher added!')
       setModal(false)
+      setForm({ email: '', full_name: '', password: 'Teacher@123', phone: '', employee_id: '', department: '', qualification: '', experience_years: '' })
       load()
     } catch (err) { toast.error(err.response?.data?.detail || 'Failed') }
     finally { setLoading(false) }
@@ -33,47 +34,100 @@ export default function TeacherManagement() {
     load()
   }
 
+  const filtered = teachers.filter(t =>
+    !search || t.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+    t.email?.toLowerCase().includes(search.toLowerCase()) ||
+    t.employee_id?.toLowerCase().includes(search.toLowerCase())
+  )
+
+  const deptCounts = filtered.reduce((acc, t) => {
+    const d = t.department || 'Other'
+    acc[d] = (acc[d] || 0) + 1
+    return acc
+  }, {})
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Teacher Management</h1>
-        <button onClick={() => setModal(true)} className="btn-primary flex items-center gap-2"><Plus className="h-4 w-4" /> Add Teacher</button>
+    <div className="space-y-5 animate-page">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div>
+          <h1 className="page-title">Teacher Management</h1>
+          <p className="page-subtitle">{teachers.length} teachers in the system</p>
+        </div>
+        <button onClick={() => setModal(true)} className="btn-primary flex items-center gap-2 self-start">
+          <Plus className="h-4 w-4" /> Add Teacher
+        </button>
       </div>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="card p-4 text-center bg-purple-50 dark:bg-purple-900/20">
+          <p className="text-2xl font-bold text-purple-600">{teachers.length}</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wide mt-1">Total Teachers</p>
+        </div>
+        <div className="card p-4 text-center bg-emerald-50 dark:bg-emerald-900/20">
+          <p className="text-2xl font-bold text-emerald-600">{teachers.filter(t => t.is_active).length}</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wide mt-1">Active</p>
+        </div>
+        <div className="card p-4 text-center bg-blue-50 dark:bg-blue-900/20 col-span-2 sm:col-span-1">
+          <p className="text-2xl font-bold text-blue-600">{Object.keys(deptCounts).length}</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wide mt-1">Departments</p>
+        </div>
+      </div>
+
       <div className="card">
         <div className="flex gap-3 mb-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input className="input pl-9" placeholder="Search teachers..." value={search}
+            <input className="input pl-9" placeholder="Search by name, email, ID…" value={search}
               onChange={e => { setSearch(e.target.value); load() }} />
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b border-gray-200 dark:border-gray-700">
-              {['Name', 'Email', 'Employee ID', 'Department', 'Experience', 'Actions'].map(h => <th key={h} className="text-left py-2 pr-4 text-gray-500">{h}</th>)}
-            </tr></thead>
+
+        <div className="table-container">
+          <table className="table">
+            <thead>
+              <tr>
+                {['Teacher', 'Employee ID', 'Department', 'Qualification', 'Experience', 'Actions'].map(h => <th key={h}>{h}</th>)}
+              </tr>
+            </thead>
             <tbody>
-              {teachers.map(t => (
-                <tr key={t.id} className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
-                  <td className="py-3 pr-4 font-medium">{t.full_name}</td>
-                  <td className="py-3 pr-4 text-gray-500">{t.email}</td>
-                  <td className="py-3 pr-4">{t.employee_id}</td>
-                  <td className="py-3 pr-4">{t.department}</td>
-                  <td className="py-3 pr-4">{t.experience_years ? `${t.experience_years} yrs` : '-'}</td>
-                  <td className="py-3">
-                    <button onClick={() => del(t.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-600">
+              {filtered.map(t => (
+                <tr key={t.id}>
+                  <td>
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-xs font-bold text-purple-700 dark:text-purple-300 flex-shrink-0">
+                        {t.full_name?.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white text-sm">{t.full_name}</p>
+                        <p className="text-xs text-gray-400">{t.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="text-gray-500 text-sm">{t.employee_id}</td>
+                  <td>{t.department || '—'}</td>
+                  <td>{t.qualification || '—'}</td>
+                  <td>{t.experience_years ? `${t.experience_years} yrs` : '—'}</td>
+                  <td>
+                    <button onClick={() => del(t.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-600 transition-colors">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </td>
                 </tr>
               ))}
-              {!teachers.length && <tr><td colSpan={6} className="py-8 text-center text-gray-500">No teachers found.</td></tr>}
+              {!filtered.length && (
+                <tr><td colSpan={6} className="py-12 text-center">
+                  <Users className="h-8 w-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+                  <p className="text-gray-500">No teachers found.</p>
+                </td></tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
-      <Modal open={modal} onClose={() => setModal(false)} title="Add New Teacher">
-        <div className="space-y-3">
+
+      <Modal open={modal} onClose={() => setModal(false)} title="Add New Teacher" size="lg">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[
             ['full_name', 'Full Name *', 'text'],
             ['email', 'Email *', 'email'],
@@ -87,13 +141,13 @@ export default function TeacherManagement() {
             <div key={name}>
               <label className="label">{label}</label>
               <input type={type} className="input" value={form[name]}
-                onChange={e => setForm(p => ({...p, [name]: e.target.value}))} />
+                onChange={e => setForm(p => ({ ...p, [name]: e.target.value }))} />
             </div>
           ))}
-          <div className="flex gap-3">
-            <button onClick={() => setModal(false)} className="btn-secondary flex-1">Cancel</button>
-            <button onClick={create} disabled={loading} className="btn-primary flex-1">{loading ? 'Adding...' : 'Add Teacher'}</button>
-          </div>
+        </div>
+        <div className="flex gap-3 mt-5">
+          <button onClick={() => setModal(false)} className="btn-secondary flex-1">Cancel</button>
+          <button onClick={create} disabled={loading} className="btn-primary flex-1">{loading ? 'Adding…' : 'Add Teacher'}</button>
         </div>
       </Modal>
     </div>

@@ -207,7 +207,7 @@ export default function PracticalManagement() {
       </div>
 
       {/* Create Modal */}
-      <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create Practical Exam" size="md">
+      <Modal open={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create Practical Exam" size="md">
         <form onSubmit={handleCreate} className="space-y-4">
           <div>
             <label className="label">Title *</label>
@@ -261,7 +261,7 @@ export default function PracticalManagement() {
       </Modal>
 
       {/* Marks Entry Modal */}
-      <Modal isOpen={showMarksModal} onClose={() => setShowMarksModal(false)} title={`Enter Marks – ${selectedExam?.title}`} size="lg">
+      <Modal open={showMarksModal} onClose={() => setShowMarksModal(false)} title={`Enter Marks – ${selectedExam?.title}`} size="lg">
         <div className="space-y-4">
           <p className="text-sm text-gray-500">
             Total Marks: <strong>{selectedExam?.total_marks}</strong> | Passing: <strong>{selectedExam?.passing_marks}</strong>

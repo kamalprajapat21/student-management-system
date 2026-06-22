@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+import os
 
 
 class Settings(BaseSettings):
@@ -12,19 +13,17 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440  # 24 hours
 
-    # MySQL Database
+    # Database — defaults to SQLite (no MySQL required for local dev)
+    # Set DATABASE_URL env var to use MySQL:
+    #   mysql+pymysql://root:password@localhost:3306/student_management?charset=utf8mb4
+    database_url: str = "sqlite:///./student_management.db"
+
+    # Legacy MySQL fields (used only when building MySQL URL manually)
     db_host: str = "localhost"
     db_port: int = 3306
     db_user: str = "root"
     db_password: str = ""
     db_name: str = "student_management"
-
-    @property
-    def database_url(self) -> str:
-        return (
-            f"mysql+pymysql://{self.db_user}:{self.db_password}"
-            f"@{self.db_host}:{self.db_port}/{self.db_name}?charset=utf8mb4"
-        )
 
     # Email (SMTP)
     smtp_host: str = "smtp.gmail.com"
@@ -53,4 +52,5 @@ def get_settings():
 
 
 settings = get_settings()
+
 

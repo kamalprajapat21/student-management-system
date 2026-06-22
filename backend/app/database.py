@@ -3,14 +3,23 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from app.config import settings
 
-engine = create_engine(
-    settings.database_url,
-    pool_pre_ping=True,
-    pool_recycle=3600,
-    pool_size=10,
-    max_overflow=20,
-    echo=settings.debug,
-)
+_is_sqlite = settings.database_url.startswith("sqlite")
+
+if _is_sqlite:
+    engine = create_engine(
+        settings.database_url,
+        connect_args={"check_same_thread": False},
+        echo=settings.debug,
+    )
+else:
+    engine = create_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+        pool_size=10,
+        max_overflow=20,
+        echo=settings.debug,
+    )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -35,9 +44,11 @@ def check_connection():
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        print(f"Connected to MySQL: {settings.db_name}")
+        db_type = "SQLite" if _is_sqlite else "MySQL"
+        print(f"Connected to {db_type}: {settings.database_url}")
         return True
     except Exception as exc:
         print(f"Database connection failed: {exc}")
         return False
+
 
