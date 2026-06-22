@@ -27,6 +27,7 @@ import AssignmentManagement from './pages/teacher/AssignmentManagement'
 import MarksManagement from './pages/teacher/MarksManagement'
 import TeacherAnalytics from './pages/teacher/Analytics'
 import PracticalManagement from './pages/teacher/PracticalManagement'
+import LeaveManagement from './pages/teacher/LeaveManagement'
 
 import AdminDashboard from './pages/admin/Dashboard'
 import StudentManagement from './pages/admin/StudentManagement'
@@ -82,6 +83,7 @@ function AppRoutes() {
       <Route path="/teacher/notices" element={<ProtectedRoute roles={["teacher", "admin"]}><Notices /></ProtectedRoute>} />
       <Route path="/teacher/analytics" element={<ProtectedRoute roles={["teacher", "admin"]}><TeacherAnalytics /></ProtectedRoute>} />
       <Route path="/teacher/practicals" element={<ProtectedRoute roles={["teacher", "admin"]}><PracticalManagement /></ProtectedRoute>} />
+      <Route path="/teacher/leaves" element={<ProtectedRoute roles={["teacher", "admin"]}><LeaveManagement /></ProtectedRoute>} />
 
       {/* Admin */}
       <Route path="/admin" element={<ProtectedRoute roles={["admin"]}><AdminDashboard /></ProtectedRoute>} />

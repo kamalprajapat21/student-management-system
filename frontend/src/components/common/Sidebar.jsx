@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen, ClipboardList,
-  BarChart3, Bell, DollarSign, Calendar, FileText, Brain, Settings,
+  BarChart3, Bell, DollarSign, Calendar, CalendarDays, FileText, Brain, Settings,
   UserCheck, BookMarked, ChevronRight, School, FlaskConical, LogOut, X
 } from 'lucide-react'
 
@@ -15,6 +15,7 @@ const navItems = {
     { to: '/student/assignments', label: 'Assignments', icon: ClipboardList },
     { to: '/student/fees', label: 'Fees', icon: DollarSign },
     { to: '/student/timetable', label: 'Timetable', icon: Calendar },
+    { to: '/student/calendar', label: 'Calendar', icon: CalendarDays },
     { to: '/student/leaves', label: 'Leave Applications', icon: FileText },
     { to: '/student/notices', label: 'Notices', icon: Bell },
     { to: '/student/ai-insights', label: 'AI Insights', icon: Brain },
@@ -25,6 +26,7 @@ const navItems = {
     { to: '/teacher/assignments', label: 'Assignments', icon: ClipboardList },
     { to: '/teacher/marks', label: 'Marks', icon: BookMarked },
     { to: '/teacher/practicals', label: 'Practicals', icon: FlaskConical },
+    { to: '/teacher/leaves', label: 'Leave Requests', icon: FileText },
     { to: '/teacher/students', label: 'Students', icon: GraduationCap },
     { to: '/teacher/notices', label: 'Notices', icon: Bell },
     { to: '/teacher/analytics', label: 'Analytics', icon: BarChart3 },
