@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { studentAPI } from '../../services/api'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
+import { CheckCircle2, XCircle, Clock, TrendingUp } from 'lucide-react'
 
 export default function Attendance() {
   const [data, setData] = useState(null)
@@ -10,66 +11,117 @@ export default function Attendance() {
     studentAPI.attendance().then(r => { setData(r.data); setLoading(false) }).catch(() => setLoading(false))
   }, [])
 
-  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-600 border-t-transparent" /></div>
+  if (loading) return (
+    <div className="flex justify-center py-20">
+      <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-600 border-t-transparent" />
+    </div>
+  )
 
+  const percentage = data?.percentage || 0
+  const isGood = percentage >= 75
   const pieData = [
     { name: 'Present', value: data?.present || 0 },
     { name: 'Absent', value: data?.absent || 0 },
   ]
-  const COLORS = ['#22c55e', '#ef4444']
+  const COLORS = ['#10b981', '#ef4444']
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Attendance</h1>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="card text-center">
-          <p className="text-4xl font-bold text-primary-600">{data?.percentage || 0}%</p>
-          <p className="text-gray-500 mt-1">Overall Attendance</p>
-          <div className={`mt-2 badge ${data?.percentage >= 75 ? 'badge-green' : 'badge-red'}`}>
-            {data?.percentage >= 75 ? 'Good Standing' : 'Below Minimum'}
+    <div className="space-y-5 animate-page">
+      <div>
+        <h1 className="page-title">My Attendance</h1>
+        <p className="page-subtitle">Track your attendance records</p>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="card text-center p-4">
+          <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-2 shadow-md">
+            <TrendingUp className="h-5 w-5 text-white" />
           </div>
+          <p className={`text-2xl sm:text-3xl font-bold ${isGood ? 'text-primary-600 dark:text-primary-400' : 'text-red-500'}`}>{percentage}%</p>
+          <p className="text-xs text-gray-400 mt-1">Overall</p>
+          <span className={`badge mt-2 ${isGood ? 'badge-green' : 'badge-red'}`}>
+            {isGood ? 'Good' : 'Low'}
+          </span>
         </div>
-        <div className="card text-center">
-          <p className="text-4xl font-bold text-green-600">{data?.present || 0}</p>
-          <p className="text-gray-500 mt-1">Classes Present</p>
+        <div className="card text-center p-4">
+          <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-2 shadow-md">
+            <CheckCircle2 className="h-5 w-5 text-white" />
+          </div>
+          <p className="text-2xl sm:text-3xl font-bold text-emerald-600 dark:text-emerald-400">{data?.present || 0}</p>
+          <p className="text-xs text-gray-400 mt-1">Present</p>
         </div>
-        <div className="card text-center">
-          <p className="text-4xl font-bold text-red-600">{data?.absent || 0}</p>
-          <p className="text-gray-500 mt-1">Classes Absent</p>
+        <div className="card text-center p-4">
+          <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-red-600 rounded-2xl flex items-center justify-center mx-auto mb-2 shadow-md">
+            <XCircle className="h-5 w-5 text-white" />
+          </div>
+          <p className="text-2xl sm:text-3xl font-bold text-red-500">{data?.absent || 0}</p>
+          <p className="text-xs text-gray-400 mt-1">Absent</p>
         </div>
       </div>
+
+      {/* Warning */}
+      {!isGood && (
+        <div className="alert-warning text-sm">
+          <p className="font-semibold">Below minimum attendance!</p>
+          <p className="mt-0.5 opacity-80">You need {Math.ceil((0.75 * (data?.total_classes || 0) - (data?.present || 0)))} more classes to reach 75%.</p>
+        </div>
+      )}
+
+      {/* Chart */}
       <div className="card">
-        <h3 className="font-semibold mb-4">Attendance Chart</h3>
+        <h3 className="font-semibold text-gray-900 dark:text-white mb-3 text-sm">Attendance Distribution</h3>
         <ResponsiveContainer width="100%" height={200}>
           <PieChart>
-            <Pie data={pieData} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({name, percent}) => `${name}: ${(percent*100).toFixed(0)}%`}>
+            <Pie
+              data={pieData}
+              cx="50%"
+              cy="50%"
+              innerRadius={55}
+              outerRadius={80}
+              dataKey="value"
+              strokeWidth={2}
+              stroke="transparent"
+            >
               {pieData.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
             </Pie>
-            <Tooltip />
+            <Tooltip formatter={(v) => [`${v} classes`, '']} />
+            <Legend wrapperStyle={{ fontSize: '13px' }} />
           </PieChart>
         </ResponsiveContainer>
       </div>
+
+      {/* History table */}
       <div className="card">
-        <h3 className="font-semibold mb-4">Attendance History</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b border-gray-200 dark:border-gray-700">
-              <th className="text-left py-2 text-gray-500">Date</th>
-              <th className="text-left py-2 text-gray-500">Subject</th>
-              <th className="text-left py-2 text-gray-500">Status</th>
-            </tr></thead>
+        <h3 className="font-semibold text-gray-900 dark:text-white mb-4 text-sm">Attendance History</h3>
+        <div className="table-container">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Subject</th>
+                <th>Status</th>
+              </tr>
+            </thead>
             <tbody>
               {(data?.records || []).slice(0, 30).map((r, i) => (
-                <tr key={i} className="border-b border-gray-100 dark:border-gray-700">
-                  <td className="py-2">{new Date(r.date).toLocaleDateString()}</td>
-                  <td className="py-2 text-gray-500">{r.subject_id ? `Subject ${r.subject_id}` : 'General'}</td>
-                  <td className="py-2">
+                <tr key={i}>
+                  <td className="text-sm text-gray-700 dark:text-gray-300 font-medium">
+                    {new Date(r.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                  </td>
+                  <td className="text-sm text-gray-500 dark:text-gray-400">
+                    {r.subject_id ? `Subject ${r.subject_id}` : 'General'}
+                  </td>
+                  <td>
                     <span className={`badge ${r.status === 'present' ? 'badge-green' : r.status === 'late' ? 'badge-yellow' : 'badge-red'}`}>
                       {r.status}
                     </span>
                   </td>
                 </tr>
               ))}
+              {!(data?.records?.length) && (
+                <tr><td colSpan={3} className="text-center text-gray-400 py-6 text-sm">No records found.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -77,3 +129,5 @@ export default function Attendance() {
     </div>
   )
 }
+
+

@@ -24,27 +24,27 @@ export default function TeacherDashboard() {
   }, [user.id])
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 animate-page">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Welcome, {user?.full_name} 👋</h1>
-        <p className="text-gray-500 dark:text-gray-400">Teacher Dashboard</p>
+        <h1 className="page-title">Welcome, {user?.full_name?.split(' ')[0]} 👋</h1>
+        <p className="page-subtitle">Teacher Dashboard</p>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
         <StatCard title="Total Students" value={stats.students} icon={GraduationCap} color="blue" />
-        <StatCard title="My Assignments" value={stats.assignments} icon={ClipboardList} color="purple" />
+        <StatCard title="Assignments" value={stats.assignments} icon={ClipboardList} color="purple" />
         <StatCard title="Present Today" value={stats.todayAttendance} icon={UserCheck} color="green" />
       </div>
       <div className="card">
-        <h3 className="font-semibold mb-3">Quick Actions</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <h3 className="font-semibold text-gray-900 dark:text-white mb-4 text-sm">Quick Actions</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            ['Mark Attendance', '/teacher/attendance', 'green'],
-            ['Create Assignment', '/teacher/assignments', 'blue'],
-            ['Add Marks', '/teacher/marks', 'purple'],
-            ['View Analytics', '/teacher/analytics', 'orange'],
-          ].map(([label, to, color]) => (
-            <a key={to} href={to} className={`p-3 bg-${color}-50 dark:bg-${color}-900/20 rounded-xl text-center hover:scale-105 transition-transform`}>
-              <p className={`font-medium text-sm text-${color}-700 dark:text-${color}-300`}>{label}</p>
+            { label: 'Mark Attendance', to: '/teacher/attendance', bg: 'bg-emerald-50 dark:bg-emerald-900/20', text: 'text-emerald-700 dark:text-emerald-300' },
+            { label: 'Create Assignment', to: '/teacher/assignments', bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300' },
+            { label: 'Add Marks', to: '/teacher/marks', bg: 'bg-purple-50 dark:bg-purple-900/20', text: 'text-purple-700 dark:text-purple-300' },
+            { label: 'View Analytics', to: '/teacher/analytics', bg: 'bg-orange-50 dark:bg-orange-900/20', text: 'text-orange-700 dark:text-orange-300' },
+          ].map(({ label, to, bg, text }) => (
+            <a key={to} href={to} className={`p-4 ${bg} rounded-2xl text-center hover:scale-[1.03] active:scale-95 transition-all duration-200 border border-white/50 dark:border-white/5`}>
+              <p className={`font-semibold text-sm ${text}`}>{label}</p>
             </a>
           ))}
         </div>

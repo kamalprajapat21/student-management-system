@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen, ClipboardList,
   BarChart3, Bell, DollarSign, Calendar, FileText, Brain, Settings,
-  UserCheck, BookMarked, ChevronRight, School, FlaskConical
+  UserCheck, BookMarked, ChevronRight, School, FlaskConical, LogOut, X
 } from 'lucide-react'
 
 const navItems = {
@@ -43,33 +43,67 @@ const navItems = {
   ],
 }
 
+const roleColors = {
+  student: 'from-primary-600 to-primary-700',
+  teacher: 'from-emerald-600 to-emerald-700',
+  admin: 'from-purple-600 to-purple-700',
+  parent: 'from-orange-500 to-orange-600',
+}
+
 export default function Sidebar({ open, onClose }) {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const items = navItems[user?.role] || []
+  const gradientClass = roleColors[user?.role] || 'from-primary-600 to-primary-700'
 
   return (
     <>
-      {open && (
-        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={onClose} />
-      )}
+      {/* Mobile backdrop */}
+      <div
+        className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden transition-opacity duration-300 ${
+          open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={onClose}
+      />
+
       <aside className={`
-        fixed left-0 top-0 h-full w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700
-        z-50 transform transition-transform duration-300 flex flex-col
+        fixed left-0 top-0 h-full w-64 bg-white dark:bg-gray-800
+        border-r border-gray-100 dark:border-gray-700/60
+        z-50 transform transition-transform duration-300 ease-in-out flex flex-col
         ${open ? 'translate-x-0' : '-translate-x-full'}
-        lg:translate-x-0 lg:static lg:z-auto
+        lg:translate-x-0 lg:static lg:z-auto shadow-xl lg:shadow-none
       `}>
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center">
-              <School className="h-6 w-6 text-white" />
+        {/* Header */}
+        <div className={`p-5 bg-gradient-to-br ${gradientClass} relative overflow-hidden`}>
+          {/* decorative circles */}
+          <div className="absolute -top-4 -right-4 w-20 h-20 bg-white/10 rounded-full" />
+          <div className="absolute -bottom-2 -left-2 w-14 h-14 bg-white/10 rounded-full" />
+          <div className="flex items-center justify-between relative z-10">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                <School className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <p className="font-bold text-white text-sm leading-tight">EduManage AI</p>
+                <p className="text-xs text-white/70 capitalize mt-0.5">{user?.role} Portal</p>
+              </div>
             </div>
-            <div>
-              <p className="font-bold text-gray-900 dark:text-white text-sm">EduManage AI</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{user?.role} Portal</p>
-            </div>
+            <button
+              onClick={onClose}
+              className="lg:hidden w-7 h-7 flex items-center justify-center rounded-lg bg-white/15 hover:bg-white/25 text-white transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </div>
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+
+        {/* User info strip */}
+        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700/60 bg-gray-50/50 dark:bg-gray-700/20">
+          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">{user?.full_name}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.email}</p>
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto no-scrollbar">
           {items.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -77,22 +111,46 @@ export default function Sidebar({ open, onClose }) {
               end={end}
               onClick={onClose}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150 group ${
+                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 group ${
                   isActive
-                    ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'
+                    ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/60 hover:text-gray-900 dark:hover:text-white'
                 }`
               }
             >
-              <Icon className="h-4 w-4 flex-shrink-0" />
-              <span className="flex-1">{label}</span>
+              {({ isActive }) => (
+                <>
+                  <span className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
+                    isActive
+                      ? 'bg-primary-100 dark:bg-primary-900/50 text-primary-600 dark:text-primary-400'
+                      : 'text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300'
+                  }`}>
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="flex-1">{label}</span>
+                  {isActive && <ChevronRight className="h-3.5 w-3.5 text-primary-500 dark:text-primary-400 opacity-60" />}
+                </>
+              )}
             </NavLink>
           ))}
         </nav>
-        <div className="p-3 border-t border-gray-200 dark:border-gray-700">
-          <p className="text-xs text-gray-400 dark:text-gray-500 text-center">EduManage AI v1.0</p>
+
+        {/* Footer */}
+        <div className="p-3 border-t border-gray-100 dark:border-gray-700/60">
+          <button
+            onClick={logout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-150 group"
+          >
+            <span className="w-8 h-8 flex items-center justify-center rounded-lg text-red-400 group-hover:bg-red-100 dark:group-hover:bg-red-900/40 transition-colors">
+              <LogOut className="h-4 w-4" />
+            </span>
+            Sign Out
+          </button>
+          <p className="text-[10px] text-gray-300 dark:text-gray-600 text-center mt-2">EduManage AI v1.0</p>
         </div>
       </aside>
     </>
   )
 }
+
+

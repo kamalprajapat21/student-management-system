@@ -5,45 +5,79 @@ import { Bell, Moon, Sun, LogOut, User, Menu } from 'lucide-react'
 import { useNotifications } from '../../context/NotificationContext'
 import { Link } from 'react-router-dom'
 
+const roleAvatarColors = {
+  student: 'from-primary-500 to-primary-600',
+  teacher: 'from-emerald-500 to-emerald-600',
+  admin: 'from-purple-500 to-purple-600',
+  parent: 'from-orange-400 to-orange-500',
+}
+
 export default function Navbar({ onMenuClick }) {
   const { user, logout } = useAuth()
   const { dark, toggle } = useTheme()
   const { unread } = useNotifications()
+  const avatarGrad = roleAvatarColors[user?.role] || 'from-primary-500 to-primary-600'
+  const initials = user?.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?'
 
   return (
-    <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center justify-between sticky top-0 z-40 shadow-sm">
-      <div className="flex items-center gap-3">
-        <button onClick={onMenuClick} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 lg:hidden">
-          <Menu className="h-5 w-5" />
+    <nav className="glass border-b border-gray-200/60 dark:border-gray-700/60 px-3 sm:px-5 py-2.5 flex items-center justify-between sticky top-0 z-40 shadow-sm">
+      <div className="flex items-center gap-2 sm:gap-3">
+        <button
+          onClick={onMenuClick}
+          className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 lg:hidden transition-colors active:scale-95"
+          aria-label="Open menu"
+        >
+          <Menu className="h-5 w-5 text-gray-600 dark:text-gray-300" />
         </button>
-        <Link to="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-sm">SM</span>
+        <Link to="/" className="flex items-center gap-2.5">
+          <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center shadow-glow-sm">
+            <span className="text-white font-bold text-xs">EM</span>
           </div>
-          <span className="font-bold text-gray-900 dark:text-white hidden sm:block">EduManage AI</span>
+          <span className="font-bold text-gray-900 dark:text-white hidden sm:block text-sm">EduManage AI</span>
         </Link>
       </div>
-      <div className="flex items-center gap-2">
-        <button onClick={toggle} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300">
-          {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+
+      <div className="flex items-center gap-1 sm:gap-2">
+        {/* Theme toggle */}
+        <button
+          onClick={toggle}
+          className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors active:scale-95"
+          aria-label="Toggle theme"
+        >
+          {dark
+            ? <Sun className="h-4.5 w-4.5 text-amber-400" />
+            : <Moon className="h-4.5 w-4.5" />
+          }
         </button>
-        <Link to={`/${user?.role}`} className="relative p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300">
-          <Bell className="h-5 w-5" />
+
+        {/* Notifications */}
+        <Link
+          to={`/${user?.role}`}
+          className="relative w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors active:scale-95"
+          aria-label="Notifications"
+        >
+          <Bell className="h-4.5 w-4.5" />
           {unread > 0 && (
-            <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+            <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center ring-2 ring-white dark:ring-gray-800">
               {unread > 9 ? '9+' : unread}
             </span>
           )}
         </Link>
-        <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-200 dark:border-gray-700">
-          <div className="w-8 h-8 bg-primary-100 dark:bg-primary-900 rounded-full flex items-center justify-center">
-            <User className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+
+        {/* User menu */}
+        <div className="flex items-center gap-2 ml-1 pl-2 sm:pl-3 border-l border-gray-200 dark:border-gray-700">
+          <div className={`w-8 h-8 bg-gradient-to-br ${avatarGrad} rounded-xl flex items-center justify-center shadow-sm flex-shrink-0`}>
+            <span className="text-white text-xs font-bold">{initials}</span>
           </div>
           <div className="hidden sm:block">
-            <p className="text-sm font-medium text-gray-900 dark:text-white leading-none">{user?.full_name}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{user?.role}</p>
+            <p className="text-sm font-semibold text-gray-900 dark:text-white leading-tight truncate max-w-[120px]">{user?.full_name}</p>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 capitalize">{user?.role}</p>
           </div>
-          <button onClick={logout} className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-500 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+          <button
+            onClick={logout}
+            className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-all active:scale-95"
+            aria-label="Logout"
+          >
             <LogOut className="h-4 w-4" />
           </button>
         </div>
